@@ -35,7 +35,7 @@ struct rs_error
              std::string&       _content,
              stack_trace        _trace,
              std::string        _fName,
-             _Args...         _variables) :
+             _Args&&...         _variables) :
                     content(std::make_shared<std::string>(_content)),
                     trace(_trace),
                     fName(_fName),
@@ -48,7 +48,7 @@ struct rs_error
             std::string&       _content,
             raw_trace_info&    _raw,
             std::string        _fName,
-            _Args...         _variables) :
+            _Args&&...         _variables) :
                content(std::make_shared<std::string>(_content)),
                trace{0, std::make_shared<long>(_raw.at), _raw.line, _raw.caret, _raw.nlindex, _raw.start},
                fName(_fName),
@@ -58,7 +58,7 @@ struct rs_error
     }
     rs_error(){}
 
-    
+
 private:
     void _setLine()
     {
@@ -66,9 +66,9 @@ private:
 
         size_t at = *trace.at;
         size_t L  = _content.length();
-    
+
         while (++at < L && _content.at(at) != '\n');
-    
+
         // dont append first \n and last \n to line
         line = _content.substr(trace.nlindex > 0 ? trace.nlindex + 1 : 0, at - trace.nlindex - 1);
     }
