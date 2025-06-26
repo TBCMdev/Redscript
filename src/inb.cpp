@@ -14,6 +14,10 @@ namespace inb_impls
     // technically tellraw impl.
     void msg(INB_IMPL_PARAMETERS)
     {
+
+        (void) program; // todo remove
+
+
         // TODO: tellraw
         rbc_value& selector = parameters.at(0);
         if (selector.index() != 0)
@@ -53,6 +57,8 @@ namespace inb_impls
     }
     void kill(INB_IMPL_PARAMETERS)
     {
+        (void) program; // todo remove
+
         rbc_value& selector = parameters.at(0);
         if (selector.index() != 0)
         {
@@ -67,6 +73,10 @@ namespace inb_impls
     }
     void compile_assert(INB_IMPL_PARAMETERS)
     {
+        (void) program; // todo remove
+        (void) factory;
+        (void) parameters;
+
         err = "Thise inbuilt function is not implemented yet.";
     }
 }

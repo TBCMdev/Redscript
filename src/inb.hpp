@@ -4,18 +4,23 @@
 #include <variant>
 #include <memory>
 
+#include "globals.hpp"
+
 struct rbc_constant;
 struct rbc_register;
 struct rs_variable;
 struct rs_object;
-
+struct rs_list;
 namespace conversion
 {
     class CommandFactory;
 };
-typedef std::variant<rbc_constant, std::shared_ptr<rbc_register>, std::shared_ptr<rs_variable>, std::shared_ptr<rs_object>, std::shared_ptr<void>> rbc_value;
+typedef RBC_VALUE_T rbc_value;
 struct rbc_program;
-#define INB_IMPL_PARAMETERS rbc_program& program, conversion::CommandFactory& factory, std::vector<rbc_value>& parameters, std::string& err 
+#define INB_IMPL_PARAMETERS [[maybe_unused]] rbc_program& program,                \
+                            [[maybe_unused]] conversion::CommandFactory& factory, \
+                            [[maybe_unused]] std::vector<rbc_value>& parameters,  \
+                            [[maybe_unused]] std::string& err 
 
 namespace inb_impls
 {
@@ -27,4 +32,4 @@ namespace inb_impls
         {"msg", msg},
         {"kill", kill}
     };
-};
+}

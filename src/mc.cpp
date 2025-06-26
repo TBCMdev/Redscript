@@ -48,7 +48,6 @@ mc_command::_This mc_command::ifcmpreg(comparison_operation_type t, int rid)
     }
     if (t != comparison_operation_type::EQ && t != comparison_operation_type::NEQ)
         WARN("Performing undefined operation on comparison register. Defaulting to neq.");
-    bool eq = t == comparison_operation_type::EQ;
     std::string s = t == comparison_operation_type::EQ ? "if" : "unless";
     
     body = s + " score " MC_COMPARE_REG_GET_RAW(INS_L(STR(rid))) + k + body;

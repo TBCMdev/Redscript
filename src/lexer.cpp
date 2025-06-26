@@ -16,8 +16,8 @@
 token_list tlex(const std::string &fName, std::string &content, rs_error *err = nullptr)
 {
     lex_info LEX_INFO;
-    auto _At_ptr = std::make_shared<long>(-1);
-    long& _At = *_At_ptr;
+    auto _At_ptr = std::make_shared<size_t>(0);
+    size_t& _At = *_At_ptr;
     size_t S = content.length();
 
     stack_trace trace(0, _At_ptr);
@@ -42,28 +42,24 @@ token_list tlex(const std::string &fName, std::string &content, rs_error *err = 
     };
     std::function<char()> adv = [&]() -> char
     {
-        // 0
         if (_At + 1 >= S)
             return 0;
-        if (_At > -1)
-        {
-            char current = content.at(_At);
+        char current = content.at(_At);
 
-            if (current == '\n')
-            {
-                trace.caret = 0;
-                trace.line++;
-                trace.nlindex = _At;
-            }
-            else
-                trace.caret++;
+        if (current == '\n')
+        {
+            trace.caret = 0;
+            trace.line++;
+            trace.nlindex = _At;
         }
+        else
+            trace.caret++;
         char c = content.at(++_At);
 
         return c;
     };
-    char ch;
-    while (ch = adv())
+    char ch = content.at(_At);
+    do
     {
         if (ch == '\n')
             continue;
@@ -71,7 +67,7 @@ token_list tlex(const std::string &fName, std::string &content, rs_error *err = 
         {
             long start = _At + 1;
             bool escaped = false;
-            while (ch = adv())
+            while ((ch = adv()))
             {
                 if (ch == '\\')
                     escaped = true;
@@ -83,14 +79,14 @@ token_list tlex(const std::string &fName, std::string &content, rs_error *err = 
             if (_At == S)
                 LEX_ERRORF(RS_SYNTAX_ERROR, "Unterminated string-literal.", start);
 
-            tokens.push_back(token{content.substr(start, _At - start), token_type::STRING_LITERAL, 0, trace, start});
+            tokens.push_back(token{content.substr(start, _At - start), token_type::STRING_LITERAL, RS_STRING_KW_ID, trace, start});
         }
         else if (std::isdigit(ch))
         {
             long start = _At;
             bool decimal = false;
 
-            while (ch = adv())
+            while ((ch = adv()))
             {
                 if (ch == '.')
                 {
@@ -101,9 +97,10 @@ token_list tlex(const std::string &fName, std::string &content, rs_error *err = 
                 else if (!std::isdigit(ch))
                     break;
             }
+            token_type t = decimal ? token_type::FLOAT_LITERAL : token_type::INT_LITERAL;
+
             tokens.push_back(token{content.substr(start, _At - start),
-                                   decimal ? token_type::FLOAT_LITERAL : token_type::INT_LITERAL,
-                                   0,
+                                   t, (uint32_t)(decimal ? RS_FLOAT_KW_ID : RS_INT_KW_ID),
                                    trace,
                                    start});
             back(); // go back 1 char
@@ -114,7 +111,9 @@ token_list tlex(const std::string &fName, std::string &content, rs_error *err = 
             long start = isSelectorLiteral ? _At + 1 : _At;
             while ((ch = adv()) && (std::isalpha(ch) || ch == '_'));
 
-            token t{content.substr(start, _At - start), isSelectorLiteral ? token_type::SELECTOR_LITERAL : token_type::WORD, 0, trace, start};
+            token t{content.substr(start, _At - start),
+                isSelectorLiteral ? token_type::SELECTOR_LITERAL : token_type::WORD,
+                (uint32_t)(isSelectorLiteral ? RS_SELECTOR_KW_ID : 0) ,trace, start};
             
             back(); // go back 1 char
 
@@ -246,7 +245,7 @@ token_list tlex(const std::string &fName, std::string &content, rs_error *err = 
             }
             tokens.push_back(token{repr, customType, (uint32_t)ch, trace});
         }
-    }
+    } while ((ch = adv()));
 
     return tokens;
 }

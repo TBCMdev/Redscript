@@ -1,18 +1,35 @@
-use math;
 
-// type path_selector: block;
-method: void msg   (_p: selector!, _msg: string!)      extern __cpp__;
+// object pair
+// {
+//     required i1: any;
+//     required i2: any;
 
-// method<T, T1>: void msg   (_p: selector!, [T, T1]...);
+//     __compare__(i1, i2);
+// }
 
-method: void kill  (_p: selector!)                     extern __cpp__;
-// method: void place (_pos: position!, _what: block|int) __inbuilt__ __cpp__;
+/*
+gets an attribute attached to a value in storage.
+this function only works on variables and objects.
+*/
+method: void getattr (__v: any, __attr: string)             __cpp__;
+/*
+sets an attribute attached to a value in storage.
+this function only works on variables and objects.
+if the attribute doesn't exist, it is created.
+you can use this to attach extra data to your variables.
+*/
+method: void setattr (__v: any, __attr: string!, __val: any)  __cpp__;
 
-// method: player! getPlayer(_name: string!) __single__
-// { return __cpp__(::playerGet); }
+method: void msg     (__p: selector!, __msg: string!)         __cpp__;
+method: void kill    (__p: selector!)                         __cpp__;
 
-module lists
-{
-    method: void append(__l: list, __v: any) __cpp__;
-    
-}
+// more to come
+
+/*
+returns the type of a variable/object attribute.
+NOTE: as of redscript alpha, only use this function with something
+stored in storage.
+*/
+// method: int! type    (__v: any)             __single__, __nocompile__
+// { return getattr(__v, "type"); }
+method: int! type    (__v: any)                               __cpp__;

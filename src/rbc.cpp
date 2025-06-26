@@ -225,6 +225,9 @@ std::string rbc_command::toHumanStr()
         case rbc_instruction::POP:
             stream << "POP ";
             break;
+        default:
+            stream << "UNKNOWN ";
+            break;
     }
     int c = 0;
     for(auto& p : parameters)
@@ -289,7 +292,9 @@ sharedt<rbc_register> rbc_program::getFreeRegister(bool operable)
         if (reg->vacant)
         {
             if (operable)
+            {
                 if (reg->operable) return reg;
+            }
             else return reg;
         }
     }
@@ -319,12 +324,12 @@ rbc_program torbc(token_list& tokens, std::string fName, std::string& content, r
 {
     rbc_program program(err);
     
-    long _At = 0;
+    size_t _At = 0;
 #pragma region global_flags
     bool _flag_parsingelif = false;
 #pragma endregion
     // overriding if not set.
-    err->trace.at = std::make_shared<long>(_At);
+    err->trace.at = std::make_shared<size_t>(_At);
     err->content  = std::make_shared<std::string>(content);
     err->fName    = fName;
     
@@ -336,7 +341,7 @@ rbc_program torbc(token_list& tokens, std::string fName, std::string& content, r
 
     auto resync = [&]() -> bool
     {
-        if (_At >= S - 1) return false;
+        if (_At > S - 1) return false;
 
         current = &tokens.at(_At);
         return true;
@@ -392,6 +397,112 @@ rbc_program torbc(token_list& tokens, std::string fName, std::string& content, r
         return nullptr;
     };
 
+    std::function<bool(rs_type_info&, rbc_value&, int)> typeverify = [&](rs_type_info& t, rbc_value& val, int useCase) -> bool
+    {
+        switch(val.index())
+        {
+            case 0:
+            {
+                rbc_constant& c = std::get<0>(val);
+                int x = static_cast<int>(c.val_type);
+                if (!t.equals(x))
+                {
+                    std::string error;
+                    switch(useCase)
+                    {
+                        case 0: // variable assignment
+                            error = "Cannot assign constant of type {} to variable of type {}.";
+                            break;
+                        case 1: // return
+                            error = "Return expression evaluated type does not match function signature.";
+                            break;
+                        default:
+                            error = "Evaluated type of this expression is not allowed here.";
+                    }
+                    COMP_ERROR_R(RS_SYNTAX_ERROR, error, false, x, t.type_id);
+                }
+                break;
+            }
+            case 1:
+            {
+                rbc_register& reg = *std::get<1>(val);
+                if (reg.operable && !t.equals(RS_INT_KW_ID))
+                {
+                    std::string error;
+                    switch(useCase)
+                    {
+                        case 0: // variable assignment
+                            error = "Expected integer expression to assign to variable of type integer.";
+                            break;
+                        default:
+                            error = "Evaluated type of this expression is not allowed here.";
+                    }
+                    COMP_ERROR_R(RS_SYNTAX_ERROR, error, false);
+                } else COMP_ERROR_R(RS_UNSUPPORTED_OPERATION_ERROR, "Non-operable registers arent supported for typing.", false);
+
+                break;
+            }
+            case 2:
+            {
+                rs_variable& var = *std::get<2>(val);
+
+                if (!t.equals(var.type_info))
+                {
+                    std::string error;
+                    switch(useCase)
+                    {
+                        case 0: // variable assignment
+                            error = "Cannot assign variable value to variable of different type.";
+                            break;
+                        case 1:
+                            error = "Variable being returned has type that does not match function return signature.";
+                            break;
+                        default:
+                            error = "Evaluated type of this expression is not allowed here.";
+                    }
+                    COMP_ERROR_R(RS_SYNTAX_ERROR, error, false);
+                }
+                break;
+            }
+            case 3:
+            {
+                WARN("No type checking for objects as of yet.");
+                break;
+            }
+            case 4:
+            {
+                rs_list& list = *std::get<4>(val);
+                if (t.array_count == 0)
+                {
+                    // todo impl list errors
+                    std::string error;
+                    switch(useCase)
+                    {
+                        case 0: // variable assignment
+                            error = "Cannot assign variable value to variable of different type.";
+                            break;
+                        case 1:
+                            error = "Return expression evaluated type does not match function signature.";
+                            break;
+                        default:
+                            error = "Evaluated type of this expression is not allowed here.";
+                    }
+                    COMP_ERROR_R(RS_SYNTAX_ERROR, error, false);
+                }
+                else 
+                {
+                    auto elType = t.element_type();
+                    for (std::shared_ptr<rbc_value>& item : list.values)
+                    {
+                        if (!typeverify(elType, *item, 2))
+                            return false;
+                    }
+                }
+                break;
+            }
+        }
+        return true;
+    };
 #pragma region variables
     auto typeparse = [&]() -> rs_type_info
     {
@@ -433,10 +544,10 @@ rbc_program torbc(token_list& tokens, std::string fName, std::string& content, r
         }
 
         uint arrayCount = 0;
-        while (next = follows(token_type::SQBRACKET_OPEN))
+        while ((next = follows(token_type::SQBRACKET_OPEN)))
         {
             arrayCount++;
-            if(!match(token_type::BRACKET_CLOSED))
+            if(!match(token_type::SQBRACKET_CLOSED))
                 COMP_ERROR_R(RS_SYNTAX_ERROR, "Unclosed type specified array.", tinfo);
         }
         if(tinfo.type_id == -1)
@@ -466,14 +577,20 @@ rbc_program torbc(token_list& tokens, std::string fName, std::string& content, r
             COMP_ERROR_R(RS_SYNTAX_ERROR, "The name '{}' already exists as a function.", nullptr, name.repr);
         std::shared_ptr<rs_variable> variable = program.getVariable(name.repr);
         bool exists = (bool)variable;
-    _eval:
-        switch(current->info)
+    // _eval:
+        if (current->info != ':')
         {
-        case ':': // init variable's type info
+            if (!exists)
+                COMP_ERROR_R(RS_SYNTAX_ERROR, "Expected type.", nullptr);
+                
+            goto _skip_type;
+        }
+        else if(exists)
         {
-            if(exists)
-                COMP_ERROR_R(RS_SYNTAX_ERROR, "Variable cannot be reinitialized with a different type.", nullptr);
-
+            COMP_ERROR_R(RS_SYNTAX_ERROR, "Variable cannot be reinitialized with a different type.", nullptr);
+        }
+        else
+        {
             rs_type_info type = typeparse();
 
             if(err->trace.ec)
@@ -481,22 +598,13 @@ rbc_program torbc(token_list& tokens, std::string fName, std::string& content, r
 
             variable = std::make_shared<rs_variable>(name, program.currentScope, !program.currentFunction);
             variable->type_info = type;
-            switch(current->info)
-            {
-                case ';':
-                    break;
-                case '=':
-                    goto _eval_expr;
-                default:
-                    if (!needsTermination)
-                        break;
-                    COMP_ERROR_R(RS_SYNTAX_ERROR, "Expected end of expression.", nullptr);
-            }
-            break;
-        }    
+        }
+
+    _skip_type:
+        switch(current->info)
+        {
         case '=': // assign a value to variable
         {
-        _eval_expr:
             bool needsCreation = !exists;
             if(!variable)
             {
@@ -522,6 +630,9 @@ rbc_program torbc(token_list& tokens, std::string fName, std::string& content, r
                     if(std::find(decorators.begin(), decorators.end(), rbc_function_decorator::NORETURN) != decorators.end())
                         COMP_ERROR_R(RS_SYNTAX_ERROR, "Cannot assign variable the value of a function that is marked as 'noreturn'.", nullptr);
                 }
+                if (!f->second->returnType->equals(variable->type_info))
+                    COMP_ERROR_R(RS_SYNTAX_ERROR, "Return type of function does not match expressions' expected type.", nullptr);
+
                 adv();
 
                 if (!callparse(funcname, false, nullptr))
@@ -542,7 +653,11 @@ rbc_program torbc(token_list& tokens, std::string fName, std::string& content, r
             if (expr.operation.isSingular() && !obj && !expr.nonOperationalResult)
             {
                 auto& value = std::get<token>(*expr.operation.left);
-
+                // we know the literal value is a constant, and therefore the type_id of the constant
+                // is stored in info as well as in .type, but .type is not uint32_t.
+                if (!variable->type_info.equals(value.info))
+                    COMP_ERROR_R(RS_SYNTAX_ERROR, "Cannot assign constant of type {} to variable of type {}.", nullptr, value.info, variable->type_info.type_id);
+                
                 rbc_value val = value.type == token_type::WORD ? program.getVariable(value.repr) : rbc_value(rbc_constant(value.type, value.repr, &value.trace));
                 // no need to evaluate.
                 if (needsCreation)
@@ -552,28 +667,23 @@ rbc_program torbc(token_list& tokens, std::string fName, std::string& content, r
             }
             else if (!obj)
             {
-                auto result = expr.rbc_evaluate(program, err);
+                rbc_value result = expr.rbc_evaluate(program, err);
+
                 if(err->trace.ec)
                     return nullptr;
-                
+
+                if(!typeverify(variable->type_info, result, 0))
+                    return nullptr;
+
                 if (needsCreation)
                     program(rbc_commands::variables::create(variable, result));
                 else
                     program(rbc_commands::variables::set(variable, result));
             }
             break;
-        }      
-        case '.': // access variable's contents (only if real_type_info says it's an object)
-            break;
+        }
         case ';':
-            if(!variable)
-            {
-                variable = std::make_shared<rs_variable>(name, program.currentScope, !program.currentFunction);
-                variable->_const = isConst;
-                // no value given
-            }
-            else
-                COMP_ERROR_R(RS_SYNTAX_ERROR, "Cannot redefine variable.", variable);
+            // COMP_ERROR_R(RS_SYNTAX_ERROR, "Cannot redefine variable, remove the type to give the variable a new value.", variable);
             break;
         case ',':
             if (parameter) break;
@@ -581,7 +691,12 @@ rbc_program torbc(token_list& tokens, std::string fName, std::string& content, r
             break;
         default:
             WARN("Unexpected token after variable usage ('%s').", current->repr.c_str());
+            break;
         }
+
+        resync();
+        if (needsTermination && current->type != token_type::LINE_END)
+            COMP_ERROR_R(RS_SYNTAX_ERROR, "Expected semi-colon to end expression.", nullptr);
 
         if (!exists && variable && !obj)
         {
@@ -605,8 +720,9 @@ rbc_program torbc(token_list& tokens, std::string fName, std::string& content, r
         else
             func = program.functions.find(name);
         std::shared_ptr<rbc_function> function = nullptr;
-        bool inbuilt = false;
+
         bool internal = false;
+
         if (func == program.functions.end())
         {
             if (!program.currentFunction)
@@ -633,10 +749,9 @@ rbc_program torbc(token_list& tokens, std::string fName, std::string& content, r
         int pc = 0; // param count
         token* start = current;
         auto& decorators = function->decorators;
-        if(std::find(decorators.begin(), decorators.end(), rbc_function_decorator::EXTERN) != decorators.end())
-            inbuilt = true;
         if (std::find(decorators.begin(), decorators.end(), rbc_function_decorator::CPP) != decorators.end())
             internal = true;
+
         adv();
         if (current->type != token_type::BRACKET_CLOSED)
         {
@@ -743,7 +858,7 @@ rbc_program torbc(token_list& tokens, std::string fName, std::string& content, r
     {
         if (current->type != token_type::CBRACKET_OPEN)
             COMP_ERROR_R(RS_SYNTAX_ERROR, "Expected object body.", nullptr);
-        rs_object obj{name};
+        rs_object obj{name, program.currentScope};
         rs_object_member_decorator decorator = rs_object_member_decorator::OPTIONAL;
         while(adv() && current->type != token_type::CBRACKET_CLOSED)
         {
@@ -786,6 +901,9 @@ rbc_program torbc(token_list& tokens, std::string fName, std::string& content, r
         return std::make_shared<rs_object>(obj);
     };
     // must be called at the index of the opening bracket 
+
+    // FOR IMPL (commented out for warning) TODO:
+    /*
     auto forparse = [&]() -> bool
     {
         if (!adv())
@@ -818,6 +936,7 @@ rbc_program torbc(token_list& tokens, std::string fName, std::string& content, r
         
         return false;
     };
+    */
 #pragma endregion objects
     do
     {
@@ -825,7 +944,7 @@ rbc_program torbc(token_list& tokens, std::string fName, std::string& content, r
         {
         case token_type::WORD:
         {
-        _parseword:
+        // _parseword:
             token& word = *current;
             if (follows(token_type::SYMBOL))
             {
@@ -907,15 +1026,18 @@ rbc_program torbc(token_list& tokens, std::string fName, std::string& content, r
             
             rs_type_info retType;
             std::string name;
-            if (current->info == ':')
-            {
-                // we are defining the return type
-                retType = typeparse();
-                if (err->trace.ec)
-                    return program;
-                name = current->repr;
-            }
-            else if(current->type == token_type::WORD)
+            if (current->type != token_type::SYMBOL || current->info != ':')
+                COMP_ERROR(RS_SYNTAX_ERROR, "Missing function return type.");
+
+            // we are defining the return type
+            retType = typeparse();
+            if (err->trace.ec)
+                return program;
+            if(retType.equals(RS_NULL_KW_ID))
+                COMP_ERROR(RS_SYNTAX_ERROR, "A functions' return type cannot be marked as null, use 'void' instead.");            
+            name = current->repr;
+            
+            if(current->type == token_type::WORD)
                 name = current->repr;
             else
                 COMP_ERROR(RS_SYNTAX_ERROR, "Invalid function name.");
@@ -1118,6 +1240,8 @@ rbc_program torbc(token_list& tokens, std::string fName, std::string& content, r
             
             if (current->type == token_type::LINE_END)
             {
+                if (!program.currentFunction->returnType->equals(RS_VOID_KW_ID))
+                    COMP_ERROR(RS_SYNTAX_ERROR, "Cannot return nothing to a function with a return type of non-void.");
                 program(rbc_command(rbc_instruction::RET));
                 break;
             }
@@ -1136,8 +1260,10 @@ rbc_program torbc(token_list& tokens, std::string fName, std::string& content, r
                 rs_expression expr = expreval(program, tokens, _At, err);
                 if(err->trace.ec)
                     return program;
-                auto result = expr.rbc_evaluate(program, err); // evaluate and compute return statement
+                rbc_value result = expr.rbc_evaluate(program, err); // evaluate and compute return statement
                 if(err->trace.ec)
+                    return program;
+                if (!typeverify(*program.currentFunction->returnType, result, 1))
                     return program;
                 program(rbc_command(rbc_instruction::RET, result));
             }
@@ -1268,6 +1394,9 @@ rbc_program torbc(token_list& tokens, std::string fName, std::string& content, r
             
             break;
         }
+        default:
+            WARN("Found suspicious token (possible due to a non implemented feature).");
+            break;
         }
     } while(adv());
 
@@ -1276,8 +1405,8 @@ rbc_program torbc(token_list& tokens, std::string fName, std::string& content, r
 void preprocess(token_list& tokens, std::string fName, std::string& content, rs_error* err,
                 std::shared_ptr<std::vector<std::filesystem::path>> visited)
 {
-    long         _At = 0;
-    const size_t S   = tokens.size();
+    long long       _At = 0;
+    const long long S   = tokens.size();
     std::filesystem::path rootPath = std::filesystem::absolute(fName);
 
     if(!visited)
@@ -1345,6 +1474,8 @@ void preprocess(token_list& tokens, std::string fName, std::string& content, rs_
 
                 break;
             }
+            default:
+                break;
         }
     } while(++_At < S);
 }
@@ -1690,7 +1821,7 @@ mc_program tomc(rbc_program& program, const std::string& moduleName, std::string
                                 rs_variable& var2 = *std::get<2>(rhs);
 
                                 usedRegister = factory.compare("data", RS_PROGRAM_STORAGE SEP MC_VARIABLE_VALUE(var.comp_info.varIndex), eq,
-                                                        RS_PROGRAM_STORAGE SEP MC_VARIABLE_VALUE(var.comp_info.varIndex));
+                                                        RS_PROGRAM_STORAGE SEP MC_VARIABLE_VALUE(var2.comp_info.varIndex));
 
                                 break;
                             }
@@ -1705,7 +1836,7 @@ mc_program tomc(rbc_program& program, const std::string& moduleName, std::string
                             commutativeVariantEquals<sharedt<rbc_register>, rbc_constant, rbc_value>(1, lhs, 0, rhs);
                         if (res)
                         {
-                            rbc_register& reg = *(*res.i1);
+                            rbc_register& reg =   *res.i1;
                             rbc_constant& con =   *res.i2;
 
                             if (reg.operable)
@@ -1727,8 +1858,8 @@ mc_program tomc(rbc_program& program, const std::string& moduleName, std::string
 
                         if (res)
                         {
-                            rbc_register& reg = *(*res.i1);
-                            rs_variable&  var = *(*res.i2);
+                            rbc_register& reg = *res.i1;
+                            rs_variable&  var = *res.i2;
 
                             if (reg.operable)
                                 factory.getRegisterValue(reg).storeResult(PADR(storage) MC_TEMP_STORAGE, "int", 1);
@@ -1744,7 +1875,7 @@ mc_program tomc(rbc_program& program, const std::string& moduleName, std::string
 
                         if (res)
                         {
-                            rs_variable&  var = *(*res.i1);
+                            rs_variable&  var = *res.i1;
                             rbc_constant& con = *res.i2;
                             
                             usedRegister = factory.compare("data", MC_VARIABLE_VALUE(var.comp_info.varIndex), eq, con.val, true);
@@ -1857,6 +1988,9 @@ mc_program tomc(rbc_program& program, const std::string& moduleName, std::string
                     factory.copyStorage(MC_VARIABLE_TYPE(var.comp_info.varIndex) , RS_PROGRAM_RETURN_TYPE_REGISTER);
                     break;
                 }
+                default:
+                    WARN("Unimplemented RBC instruction found.");
+                    break;
             }
         }
         mccmdlist list = factory.package();
@@ -1966,7 +2100,7 @@ namespace conversion
         return THIS;
     }
 
-    CommandFactory::_This CommandFactory::pushParameter    (const std::string& name, rbc_value& val)
+    CommandFactory::_This CommandFactory::pushParameter    (rbc_value& val)
     {
         switch(val.index())
         {
@@ -2217,6 +2351,10 @@ namespace conversion
         create_and_push(MC_DATA_CMD_ID, MC_DATA(modify storage, INS(dest)) PAD(append value) INS_L(_const));
         return THIS;
     }
+    mc_command CommandFactory::makeAppendStorage    (const std::string& dest, const std::string& _const)
+    {
+        return mc_command(false, MC_DATA_CMD_ID, MC_DATA(modify storage, INS(dest)) PAD(append value) INS_L(_const));
+    }
     CommandFactory::_This CommandFactory::copyStorage      (const std::string& dest, const std::string& src)
     {
         create_and_push(MC_DATA_CMD_ID, MC_DATA(modify storage, INS(dest))
@@ -2280,6 +2418,81 @@ namespace conversion
             case 3:
             {
                 // TODO
+                break;
+            }
+            case 4:
+            {
+                //  0, 1, 2, 3
+                // v = [4, x, 4, y]
+
+                rs_list& l = *std::get<4>(val);
+
+                std::stringstream listInitStr;
+                listInitStr << '[';
+
+                std::vector<uint32_t> uninitialized;
+                std::vector<mc_command> initCommands;
+                for(auto& value : l.values)
+                {
+                    switch(value->index())
+                    {
+                        case 0:
+                        {
+                            rbc_constant& c = std::get<0>(*value);
+                            c.quoteIfStr();
+
+                            listInitStr << c.val << ',';
+
+                            break;
+                        }
+                        case 1:
+                        {
+                            rbc_register& reg = *std::get<1>(*value);
+                            
+                            if(reg.operable)
+                            {
+                                mc_command assign(false, MC_DATA_CMD_ID, MC_DATA(modify storage, MC_VARIABLE_VALUE(var.comp_info.varIndex))
+                                                        PAD(append from score) MC_OPERABLE_REG(INS_L(STR(reg.id)))
+                                                );
+                                initCommands.push_back(assign);
+
+                            }
+                            else
+                            {
+                                // TODO FIX
+                                mc_command assign(false, MC_DATA_CMD_ID, MC_DATA(modify storage, MC_VARIABLE_VALUE(var.comp_info.varIndex))
+                                                        PAD(append from storage) MC_NOPERABLE_REG(reg.id)
+                                            );
+                                initCommands.push_back(assign);
+                            }
+                            break;
+                        }
+                        case 2:
+                        {
+                            // insert 0, and append (move code to below).
+                            rs_variable& v = *std::get<2>(*value);
+
+                            mc_command assign(false, MC_DATA_CMD_ID, MC_DATA(modify storage, MC_VARIABLE_VALUE(var.comp_info.varIndex))
+                                                        PAD(append from storage) MC_VARIABLE_VALUE_FULL(v.comp_info.varIndex)
+                                            );
+                            initCommands.push_back(assign);
+                            break;
+                        }
+                    }
+                }
+                listInitStr.seekp(-1, std::ios_base::end);
+                listInitStr << ']';
+
+                create_and_push(MC_DATA_CMD_ID,
+                    MC_DATA(modify storage, RS_PROGRAM_VARIABLES)
+                        PAD(append value)
+                    MC_VARIABLE_JSON_VAL(listInitStr.str(), std::to_string(var.scope),
+                                                std::to_string(var.type_info.type_id))
+                                );
+
+                // add all commands after we init
+                for (auto& cmd : initCommands) add(cmd);
+
                 break;
             }
         }
@@ -2362,11 +2575,13 @@ namespace conversion
                         rbc_register& reg  = *std::get<1>(rhs);
                         reg.operable ? op_reg_math(reg, lhs, op) : nop_reg_math(reg, lhs, op);
                         reg.free();
+                        break;
                     }
                     default:
                         ERROR("Constant operation is unsupported here.");
                         return THIS;
                 }
+                break;
             }
             default:
                 ERROR("Constant operation is unsupported here.");

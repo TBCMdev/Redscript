@@ -95,7 +95,7 @@ int main(int argc, char* const* argv)
 
     if(debug || 1)
     {
-        INFO("Token Count: %d", list.size());
+        INFO("Token Count: %zu", list.size());
         for(token t : list)
         {
             std::cout << t.str() << std::endl;

@@ -20,7 +20,7 @@
     }
 #pragma region objects
 
-std::shared_ptr<rs_object> parseInlineObject(rbc_program& program, token_list& tlist, long& start, rs_error* err)
+std::shared_ptr<rs_object> parseInlineObject(rbc_program& program, token_list& tlist, size_t& start, rs_error* err)
 {
     size_t S = tlist.size();
     rs_object obj;
@@ -108,7 +108,7 @@ rs_expression::_ResultT rs_expression::rbc_evaluate(rbc_program& program, rs_err
     {
         token& value = std::get<token>(*node->left);
         std::shared_ptr<rs_variable> var;
-        if (var = program.getVariable(value))
+        if ((var = program.getVariable(value)))
             leftVal = std::make_shared<_ValueT>(var);
         else
             leftVal = std::make_shared<_ValueT>(rbc_constant(value.type, value.repr, &value.trace));
@@ -138,7 +138,7 @@ rs_expression::_ResultT rs_expression::rbc_evaluate(rbc_program& program, rs_err
     {
         token& value = std::get<token>(*node->right);
         std::shared_ptr<rs_variable> var;
-        if (var = program.getVariable(value))
+        if ((var = program.getVariable(value)))
             rightVal = std::make_shared<_ValueT>(var);
         else
             rightVal = std::make_shared<_ValueT>(rbc_constant(value.type, value.repr, &value.trace));
@@ -167,9 +167,9 @@ rs_expression::_ResultT rs_expression::rbc_evaluate(rbc_program& program, rs_err
 
     return reg;
 }
-bst_operation<token> make_bst(rbc_program &program, token_list &tlist, long &start, rs_error *err, bool br, bool oneNode, bool obj)
+bst_operation<token> make_bst(rbc_program &program, token_list &tlist, size_t &start, rs_error *err, bool br, bool oneNode, bool obj)
 {
-    const long S = tlist.size();
+    const size_t S = tlist.size();
     bst_operation<token> root;
     do
     {
@@ -245,11 +245,12 @@ bst_operation<token> make_bst(rbc_program &program, token_list &tlist, long &sta
             break;
         }
         default:
-            if ((current.info == ',' && (br || obj)) ||
+            // exceptions: these are all handled externally
+            if ((current.info == ',' || current.type == token_type::SQBRACKET_CLOSED) ||
                 (current.info == '}' && obj)         ||
                 (current.type == token_type::COMPARE_EQUAL || current.type == token_type::COMPARE_NOTEQUAL))
             {
-                return root; // commas can end expressions in brackets
+                return root; // commas can end expressions
             }
             EXPR_ERROR(RS_SYNTAX_ERROR, "Unknown token in expression.", current.trace);
         }
@@ -407,8 +408,33 @@ void prune_expr(rbc_program& program, bst_operation<token>& expr, rs_error* err)
     }
     
 }
+// call after first [
+std::shared_ptr<rs_list> parseList(rbc_program& program, token_list& tlist, size_t& start, rs_error* err)
+{
+    rs_list list;
+    const size_t S = tlist.size();
+    // just for error
+    token& at = tlist.at(start);
 
-rs_expression expreval(rbc_program &program, token_list &tlist, long& start, rs_error *err, bool br, bool lineEnd, bool obj, bool prune)
+    do
+    {
+        rs_expression expr = expreval(program, tlist, start, err, false, false);
+        if (err->trace.ec)
+            return nullptr;
+        rs_expression::_ResultT val = expr.rbc_evaluate(program, err);
+        if (err->trace.ec)
+            return nullptr;
+
+        list.values.push_back(std::make_shared<rbc_value>(val));
+        at = tlist.at(start++);
+    } while (start < S && at.type == token_type::SYMBOL && at.info == ',');
+
+    if (at.type != token_type::SQBRACKET_CLOSED)
+        EXPR_ERROR_R(RS_SYNTAX_ERROR, "Unclosed square bracket.", at.trace, nullptr);
+
+    return std::make_shared<rs_list>(list);
+}
+rs_expression expreval(rbc_program &program, token_list &tlist, size_t& start, rs_error *err, bool br, bool lineEnd, bool obj, bool prune)
 {
     rs_expression expr;
     token& current = tlist.at(start);
@@ -428,7 +454,14 @@ rs_expression expreval(rbc_program &program, token_list &tlist, long& start, rs_
         expr.nonOperationalResult = std::make_shared<rbc_value>(rbc_constant(token_type::SELECTOR_LITERAL, current.repr));
         return expr;
     }
+    else if (current.type == token_type::SQBRACKET_OPEN)
+    {
+        start++;
+        expr.nonOperationalResult = std::make_shared<rbc_value>(parseList(program, tlist, start, err));
+        return expr;
+    }
     bst_operation<token> bst = make_bst(program, tlist, start, err, br, false, obj);
+
     if (err->trace.ec)
         return expr;
     if (lineEnd)

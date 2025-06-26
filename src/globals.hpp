@@ -18,7 +18,12 @@
 #define MC_DATAPACK_FOLDER "datapacks"
 #define MC_MCMETA_FILE_NAME "pack.mcmeta"
 #define MC_TEMP_STORAGE_NAME "temp"
-
+#define RBC_VALUE_T std::variant<rbc_constant, \
+                      std::shared_ptr<rbc_register>, \
+                      std::shared_ptr<rs_variable>, \
+                      std::shared_ptr<rs_object>, \
+                      std::shared_ptr<rs_list>, \
+                      std::shared_ptr<void>>
 #define RS_PROGRAM_DATA_DEFAULT "{\"" RS_PROGRAM_VARIABLES "\":[], \"" RS_PROGRAM_REGISTERS "\":[], \"" RS_PROGRAM_DATA "\":{}, \"" RS_PROGRAM_STACK "\":[], \"" RS_PROGRAM_RETURN_REGISTER "\": 0, \"temp\": 0}"
 
 inline rs_config RS_CONFIG;

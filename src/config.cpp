@@ -16,14 +16,14 @@ rs_config readConfig(const std::string& path, rs_error* err)
         CONFIG_ERROR("RS config does not exist.");
 
     const size_t S = content.size();
-    std::shared_ptr<long> _At = std::make_shared<long>(0);
-    long& iter = *_At;
+    std::shared_ptr<size_t> _At = std::make_shared<size_t>(0);
+    size_t& iter = *_At;
     while((iter = content.find('=', iter + 1)) != std::string::npos)
     {
         trace.line++;
-        long start = iter, end = iter;
+        size_t start = iter, end = iter;
 
-        while (start - 1 >= 0 && content.at(start - 1) != '\n') start--;
+        while (start > 0 && content.at(start - 1) != '\n') start--;
         while (end + 1 < S && content.at(end + 1) != '\n') end++;
         trace.nlindex = start;
         trace.start = start;

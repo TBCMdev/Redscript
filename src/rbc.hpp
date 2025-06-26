@@ -115,9 +115,9 @@ public:
 class rbc_register
 {
 public:
+    uint id;
     bool operable;
     bool vacant = true;
-    uint id;
 
     rbc_register(uint _id, bool _operable, bool _vacant)
         : id(_id), operable(_operable), vacant(_vacant)
@@ -131,9 +131,11 @@ public:
         return "(reg){(id=" + std::to_string(id) + ") op=" + std::to_string(operable) + ", vacant=" + std::to_string(vacant) + '}'; 
     }
 };
+
 template<typename _T>
 using sharedt = std::shared_ptr<_T>;
-typedef std::variant<rbc_constant, sharedt<rbc_register>, sharedt<rs_variable>, sharedt<rs_object>, sharedt<void>> rbc_value;
+typedef RBC_VALUE_T rbc_value;
+
 struct rbc_command
 {
     rbc_instruction type;
@@ -163,7 +165,7 @@ struct raw_rbc_function
 struct rbc_function
 {
     std::string name;
-    uint scope = 0;
+    int scope = 0;
     std::unordered_map<std::string, rbc_func_var_t> localVariables;
     std::vector<rbc_command> instructions;
     std::vector<rbc_function_decorator> decorators;
@@ -192,7 +194,7 @@ struct rs_module
 struct rbc_program
 {
     rs_error* context;
-    uint32_t  currentScope = 0;
+    int32_t   currentScope = 0;
     std::stack<rbc_scope_type> scopeStack;
     iterable_stack<std::shared_ptr<rbc_function>> functionStack;
     std::vector<std::shared_ptr<rs_variable>> globalVariables;
@@ -219,6 +221,16 @@ public:
         (operator()(commands), ...);
     }
 
+    rbc_program(rs_error* _context)
+        : context(_context)
+        , currentScope(0)
+        , currentModule(nullptr)
+        , currentFunction(nullptr)
+        , globalFunction{}
+        , lastScope{}
+    {
+        // Other containers default-initialize themselves
+    }
 };
 
 namespace rbc_commands
@@ -258,7 +270,7 @@ namespace conversion
         
         
         _This op_reg_math(rbc_register& reg, rbc_value& val, bst_operation_type t);
-        inline _This nop_reg_math(rbc_register& reg, rbc_value& val, bst_operation_type t)
+        inline _This nop_reg_math(rbc_register&, rbc_value&, bst_operation_type)
         {
             WARN("Non operable register math is not supported.");
             return THIS;
@@ -321,10 +333,11 @@ namespace conversion
 
         _This copyStorage    (const std::string& dest, const std::string& src);
         _This appendStorage  (const std::string& dest, const std::string& _const);
+
         _This createVariable (rs_variable& var);
         _This createVariable (rs_variable& var, rbc_value& val);
         _This math           (rbc_value& lhs, rbc_value& rhs, bst_operation_type t);
-        _This pushParameter  (const std::string&, rbc_value& val);
+        _This pushParameter  (rbc_value& val);
         _This popParameter   ();
         _This invoke         (const std::string& module, rbc_function& func);
         _This Return         (bool val);
@@ -335,11 +348,13 @@ namespace conversion
         static mc_command makeCopyStorage (const std::string& dest, const std::string& src);
         static mc_command getVariableValue(rs_variable& var);
         static mc_command getRegisterValue(rbc_register& reg);
+        static mc_command makeAppendStorage(const std::string& dest, const std::string& _const);
+
         static mc_command getStackValue   (long index);
         _This             setRegisterValue(rbc_register& reg, rbc_value& c);
         _This             setVariableValue(rs_variable& var, rbc_value& val);
     };
 }
 
-
+bool typeverify(rs_type_info& t, rbc_value& val, int useCase);
 mc_program tomc(rbc_program&, const std::string&, std::string&);

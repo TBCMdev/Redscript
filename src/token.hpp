@@ -9,8 +9,8 @@
 enum class token_type
 {
     WORD,
-    STRING_LITERAL,
     INT_LITERAL,
+    STRING_LITERAL,
     FLOAT_LITERAL,
     LIST_LITERAL,
     OBJECT_LITERAL,
@@ -97,7 +97,7 @@ struct token
         : repr(_repr), type(_type), info(_info), trace(_trace)
     {
         trace.start = start - trace.nlindex;
-        if (trace.start == trace.caret) trace.start = -1;
+        if (trace.start > -1 && static_cast<size_t>(trace.start) == trace.caret) trace.start = -1;
     }
     token(std::string _repr, token_type _type, uint32_t _info, raw_trace_info _trace)
         : repr(_repr), type(_type), info(_info), trace(_trace) {}

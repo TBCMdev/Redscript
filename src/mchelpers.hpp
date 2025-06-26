@@ -26,7 +26,7 @@
                                                  PADL(set) PAD(value) \
                                                  MC_VARIABLE_JSON_DEFAULT(scope, type) \
                                                  __VA_ARGS__
-#define MC_VARIABLE_SET_CONST(id, v) PADR(modify storage) RS_PROGRAM_DATA SEP ARR_AT(RS_PROGRAM_VARIABLES, STR(id)) PADR(.value set value) INS_L(v)
+#define MC_VARIABLE_SET_CONST(id, v) PADR(modify storage) RS_PROGRAM_STORAGE SEP ARR_AT(RS_PROGRAM_VARIABLES, STR(id)) PADR(.value set value) INS_L(v)
 #pragma endregion variables
 
 #pragma region registers

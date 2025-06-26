@@ -30,7 +30,7 @@ struct mc_command
     uint        cmd;
     std::string body;
 
-    constexpr inline const bool isexec()
+    constexpr inline bool isexec()
     { return cmd == MC_EXEC_CMD_ID; }
 
     _This addroot();
@@ -52,7 +52,7 @@ struct mc_function
     std::string name;
     std::vector<mc_command> commands;
     std::vector<std::string> modulePath;
-    std::string parentalHashStr;
+    std::string parentalHashStr = "";
 };
 struct comparison_register
 {

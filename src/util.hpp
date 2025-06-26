@@ -9,6 +9,9 @@
 #include <functional>
 #include <sstream>
 #include <iomanip>
+
+#include <type_traits>
+
 inline std::string removeSpecialCharacters(const std::string &input)
 {
     std::string output;
@@ -37,22 +40,43 @@ inline T &unmove(T &&x)
     return x;
 }
 
-template <typename _T1, typename _T2>
-struct result_pair
-{
-    _T1 *i1;
-    _T2 *i2;
-    bool result;
+template<typename T>
+struct unwrapped_shared
+{ using type = T;};
 
-    result_pair(_T1 &_i1, _T2 &_i2) : result(true), i1(&_i1), i2(&_i2)
-    {
-    }
+
+template<typename T>
+struct unwrapped_shared<std::shared_ptr<T>>
+{ using type = T;};
+
+
+template <typename _T1, typename _T2>
+struct  result_pair
+{
+    bool result;
+    unwrapped_shared<_T1>::type* i1;
+    unwrapped_shared<_T2>::type* i2;
+
+    result_pair(_T1& _i1, _T2& _i2)
+        : result(true),
+          i1(unwrap_ptr(_i1)),
+          i2(unwrap_ptr(_i2))
+    {}
+
     result_pair() : result(false), i1(nullptr), i2(nullptr) {}
 
-    operator bool()
-    {
-        return result;
-    }
+    operator bool() const { return result; }
+
+private:
+
+    template<typename _T>
+    static _T* unwrap_ptr(std::shared_ptr<_T> x)
+    { return x.get(); }
+
+    template<typename _T>
+    static _T* unwrap_ptr(_T& x)
+    { return &x; }
+    
 };
 template <typename _VariantT, typename _VariantT2, typename _Variant>
 inline constexpr result_pair<_VariantT, _VariantT2> commutativeVariantEquals(size_t aval, _Variant &a, size_t bval, _Variant &b)

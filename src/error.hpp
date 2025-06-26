@@ -11,18 +11,20 @@
 
 struct raw_trace_info
 {
-    long at = 0, line = 0, caret = 0, nlindex = 0, start=-1;
+    size_t at = 0, line = 0, caret = 0, nlindex = 0;
+    long long start = -1;
 };
 
 struct stack_trace
 {
     uint32_t ec = 0;
-    std::shared_ptr<long> at = nullptr;
-    long line = 1, caret = 0, nlindex = 0, start=-1;
+    std::shared_ptr<size_t> at = nullptr;
+    size_t line = 1, caret = 0, nlindex = 0;
+    long long start=-1;
 
     operator raw_trace_info ()
     {
-        return raw_trace_info{*at,line,caret,nlindex,start};
+        return raw_trace_info{*at, line, caret, nlindex, start};
     }
 };
 struct rs_error
@@ -36,10 +38,10 @@ struct rs_error
              stack_trace        _trace,
              std::string        _fName,
              _Args&&...         _variables) :
-                    content(std::make_shared<std::string>(_content)),
                     trace(_trace),
+                    message(std::vformat(_message, std::make_format_args(std::forward<_Args>(_variables)...))),
                     fName(_fName),
-                    message(std::vformat(_message, std::make_format_args(std::forward<_Args>(_variables)...)))
+                    content(std::make_shared<std::string>(_content))
     {
         _setLine();
     }
@@ -49,10 +51,10 @@ struct rs_error
             raw_trace_info&    _raw,
             std::string        _fName,
             _Args&&...         _variables) :
-               content(std::make_shared<std::string>(_content)),
-               trace{0, std::make_shared<long>(_raw.at), _raw.line, _raw.caret, _raw.nlindex, _raw.start},
+               trace{0, std::make_shared<size_t>(_raw.at), _raw.line, _raw.caret, _raw.nlindex, _raw.start},
+               message(std::vformat(_message, std::make_format_args(std::forward<_Args>(_variables)...))),
                fName(_fName),
-               message(std::vformat(_message, std::make_format_args(std::forward<_Args>(_variables)...)))
+               content(std::make_shared<std::string>(_content))
     {
         _setLine();
     }

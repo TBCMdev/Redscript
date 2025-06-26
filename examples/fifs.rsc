@@ -1,5 +1,5 @@
 use lang;
-x = 68;
+x: int = 68;
 
 // do math => if math not 0 => store yes in cmp0
 if (x != 0)

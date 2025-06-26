@@ -57,6 +57,8 @@ inline std::string operationTypeToStr(bst_operation_type t)
             return std::string(1, '^');
         case bst_operation_type::MOD:
             return std::string(1, '%');
+        default:
+            break;
     }
 
     return "NULL";
@@ -120,6 +122,8 @@ inline _T operator_compute(_T left, bst_operation_type op, _T right)
             {
                 return left % right;
             }
+            break;
+        default:
             break;
     }
     return left;
