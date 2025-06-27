@@ -308,18 +308,7 @@ sharedt<rbc_register> rbc_program::makeRegister(bool operable, bool vacant)
     return registers[id];
 }
 
-#define COMP_ERROR(_ec, message, ...)                                    \
-    {                                                                    \
-        *err = rs_error(message, content, current->trace, fName, current->trace.start, ##__VA_ARGS__);  \
-        err->trace.ec = _ec;                                                  \
-        return program;                                                   \
-    }
-#define COMP_ERROR_R(_ec, message, ret, ...)                                    \
-    {                                                                    \
-        *err = rs_error(message, content, current->trace, fName, current->trace.start, ##__VA_ARGS__);  \
-        err->trace.ec = _ec;                                                  \
-        return ret;                                                   \
-    }
+
 rbc_program torbc(token_list& tokens, std::string fName, std::string& content, rs_error* err)
 {
     rbc_program program(err);
