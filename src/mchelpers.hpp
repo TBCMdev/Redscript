@@ -54,7 +54,6 @@
 #define MC_STACK_PUSH_CONST(x) MC_DATA(modify storage, RS_PROGRAM_STACK) PAD(append value) INS_L(x)
 #define MC_STACK_AT(id) ARR_AT(RS_PROGRAM_STACK, STR(id))
 #define MC_GET_STACK_VALUE(id) MC_DATA(get storage, MC_STACK_AT(id))
-
 #pragma endregion stack
 
 #pragma region tellraw
@@ -90,5 +89,4 @@
 #define MC_TEMP_STORAGE_SET_CONST(val) MC_DATA(modify storage, MC_TEMP_STORAGE_NAME) PAD(set value) INS_L(val)
 #define MC_TEMP_STORAGE_SCOREBOARD_SET_CONST(val) PADR(players set) MC_TEMP_SCOREBOARD_STORAGE SEP INS_L(val)
 #define MC_TEMP_STORAGE_SCOREBOARD_SET_RAW_CONST(val) PADR(players set) MC_TEMP_SCOREBOARD_STORAGE SEP val
-
 #pragma endregion temporary_storage

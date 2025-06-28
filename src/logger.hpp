@@ -8,6 +8,9 @@
 #define ERROR_COLOR "\x1b[31m"
 #define ERROR_RESET "\x1b[0m"
 
+#define KEYWORD_HIGHLIGHT_COLOR "\x1b[1;35m"  // Bold + Bright Purple (Magenta)
+#define TYPE_HIGHLIGHT_COLOR    "\x1b[1;33m"  // Bold + Bright Yellow
+
 #define ERROR(x, ...) printf("\x1b[31m[ERROR] " x "\x1b[0m\n", ##__VA_ARGS__);
 #define SUCCESS(x,  ...) printf("\x1b[32m[SUCCESS] " x "\x1b[0m\n", ##__VA_ARGS__);
 #define WARN(x,  ...) printf("\x1b[33m[WARN] " x "\x1b[0m\n", ##__VA_ARGS__);

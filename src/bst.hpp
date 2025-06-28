@@ -11,7 +11,7 @@ struct bst_node
 
     std::shared_ptr<_Storage> value;
 
-    std::shared_ptr<bst_node<_Storage>>& makeChild(_Storage& _child)
+    inline std::shared_ptr<bst_node<_Storage>>& makeChild(_Storage& _child)
     {
         bst_node<_Storage> child;
 

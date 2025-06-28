@@ -4,6 +4,8 @@
 #include <iostream>
 #include <sstream>
 #include <memory>
+#include <unordered_map>
+
 #include "logger.hpp"
 
 #define RS_ERROR_LINE_PADDING 2
@@ -76,4 +78,5 @@ private:
     }
 };
 
+std::string syntaxHighlight(const std::string& s);
 void printerr(rs_error&);

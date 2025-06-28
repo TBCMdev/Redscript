@@ -157,8 +157,3 @@ struct rs_list
 };
 
 void prune_expr(rbc_program&, bst_operation<token>&, rs_error*);
-bst_operation<token> make_bst(rbc_program& program, token_list& tlist, size_t& start, rs_error* err, bool br = false, bool oneNode = false, bool obj = false);
-rs_expression expreval(rbc_program& program, token_list& tlist, size_t& start, rs_error* err,
-                        bool br = false, bool lineEnd = true, bool obj = false, bool prune = true);
-std::shared_ptr<rs_object> parseInlineObject(rbc_program& program, token_list& tlist, size_t& start, rs_error* err);
-std::shared_ptr<rs_list>   parseList(rbc_program& program, token_list& tlist, size_t& start, rs_error* err);

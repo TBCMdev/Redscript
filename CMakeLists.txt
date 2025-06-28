@@ -28,6 +28,7 @@ add_library(redscript_lib
 	src/mc.cpp
 	src/rbc.cpp
 	src/util.cpp
+	src/parser.cpp
 )
 
 add_executable(rscript entry.cpp)

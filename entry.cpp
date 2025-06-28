@@ -6,6 +6,9 @@
 #include "rbc.hpp"
 #include "config.hpp"
 #include "getopt.h"
+
+#include "parser.hpp"
+
 int main(int argc, char* const* argv)
 {
     if (argc < 3) 
@@ -104,7 +107,19 @@ int main(int argc, char* const* argv)
     
     INFO("Compiling...");
 
-    rbc_program bytecode = torbc(list, fileName, fContent, &error);
+    rbc_parser parser(list, fileName, fContent, std::make_shared<rs_error>(error));
+
+    try{
+        do
+        {
+            parser.parseCurrent();
+        } while (parser.adv());
+    } catch(rs_error* err)
+    {
+        printerr(*err);
+        ERROR("Program compilation terminated.");
+        return EXIT_FAILURE;
+    }
 
     if (error.trace.ec)
     {
@@ -116,11 +131,11 @@ int main(int argc, char* const* argv)
     {
         std::ofstream out("./out.rbc");
         INFO("Writing global byte code to out.rbc...");
-        for(auto& function   : bytecode.functions)
+        for(auto& function   : parser.program.functions)
         {
             out << function.second->toHumanStr() << '\n';
         }
-        for(rbc_command& instruction : bytecode.globalFunction.instructions)
+        for(rbc_command& instruction : parser.program.globalFunction.instructions)
         {
             INFO("[scope: GLOBAL] [%d] %s", i, instruction.tostr().c_str());
             out << instruction.toHumanStr() << '\n';
@@ -136,7 +151,7 @@ int main(int argc, char* const* argv)
     toLower(outFolderLower);
 
     // mc_program endProgram = tomc(bytecode, removeSpecialCharacters(outFolderLower), conversionError);
-    mc_program endProgram = tomc(bytecode, "redscript", conversionError);
+    mc_program endProgram = tomc(parser.program, "redscript", conversionError);
 
     if (!conversionError.empty())
     {

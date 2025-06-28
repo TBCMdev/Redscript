@@ -251,7 +251,6 @@ namespace rbc_commands
 };
 void preprocess(token_list&, std::string, std::string&, rs_error*,
                 std::shared_ptr<std::vector<std::filesystem::path>> = nullptr);
-rbc_program torbc(token_list&, std::string, std::string&, rs_error*);
 
 namespace conversion
 {
@@ -356,5 +355,4 @@ namespace conversion
     };
 }
 
-bool typeverify(rs_type_info& t, rbc_value& val, int useCase);
 mc_program tomc(rbc_program&, const std::string&, std::string&);
