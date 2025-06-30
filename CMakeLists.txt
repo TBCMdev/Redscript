@@ -6,6 +6,7 @@ set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_COMPILER_ID 1)
 
+
 if (MSVC)
     add_compile_options(/W4)  # Use /W4 instead of -Wextra
 else()
@@ -16,7 +17,7 @@ if (MINGW)
     set(CMAKE_EXE_LINKER_FLAGS "-static")
 endif()
 
-add_compile_options(-g3)
+add_compile_options(-g3 -pipe)
 
 add_library(redscript_lib
 	src/config.cpp

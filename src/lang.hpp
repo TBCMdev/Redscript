@@ -16,56 +16,7 @@ struct rs_object;
 struct rs_list;
 #include "bst.hpp"
 #include "token.hpp"
-
-struct rs_type_info
-{
-
-    int32_t type_id     = -1; // first type id
-    uint32_t array_count = 0;
-    bool optional = false;
-    bool strict   = false;
-    std::vector<rs_type_info> otherTypes = {}; // others if specified
-    inline std::string tostr()
-    {
-        std::string typestr = std::to_string(type_id);
-        if (optional) typestr.push_back('?');
-        if (strict)   typestr.push_back('!');
-        for(size_t i = 0; i < otherTypes.size(); i++)
-            typestr += '|' + otherTypes.at(i).tostr();
-
-        if (array_count == 0)
-            return typestr;
-        else
-            return typestr + '[' + std::to_string(array_count) + ']';    
-    }
-    inline rs_type_info element_type()
-    {
-        if (array_count < 1) return *this;
-
-        return rs_type_info{type_id, array_count - 1, optional, strict, otherTypes};
-    }
-
-    inline bool equals(const rs_type_info& other)
-    {
-        return (optional && other.type_id == RS_NULL_KW_ID) || (other.type_id == type_id && other.array_count == array_count && other.optional == optional && other.strict == strict) || canConvertTo(other);
-    }
-    inline bool equals(int32_t type)
-    {
-        // int? -> int? : yes
-        // int -> int? : yes
-        // int -> int : yes
-        // int? -> int : no
-        // int -> int!
-
-        return (type == type_id && array_count == 0);
-    }
-    inline bool canConvertTo(const rs_type_info& other)
-    {
-        return other.type_id == type_id         &&
-               other.array_count == array_count &&
-               ((other.optional && !strict) || other.optional == optional || other.strict == strict);
-    }
-};
+#include "type_info.hpp"
 // holds a bst for pruning and computing,
 // or a shared ptr to a raw non operational result such as an object.
 // this ptr is not given a value to singleton expressions, such as integers or strings.

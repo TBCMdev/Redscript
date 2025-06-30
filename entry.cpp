@@ -87,8 +87,8 @@ int main(int argc, char* const* argv)
         return EXIT_FAILURE;
     }
     INFO("Preprocessing...");
-
-    preprocess(list, fileName, fContent, &error);
+    fragment_ptr_deque fragments;
+    preprocess(list, fileName, fContent, &error, fragments);
 
     if(error.trace.ec)
     {
@@ -99,15 +99,15 @@ int main(int argc, char* const* argv)
     if(debug || 1)
     {
         INFO("Token Count: %zu", list.size());
-        for(token t : list)
+        for(auto& tok : list)
         {
-            std::cout << t.str() << std::endl;
+            std::cout << tok.str() << '\n';
         }
     }
     
     INFO("Compiling...");
 
-    rbc_parser parser(list, fileName, fContent, std::make_shared<rs_error>(error));
+    rbc_parser parser(fragments);
 
     try{
         do
@@ -116,7 +116,13 @@ int main(int argc, char* const* argv)
         } while (parser.adv());
     } catch(rs_error* err)
     {
-        printerr(*err);
+        // todo these notes need to be seperated to help the user with errors. First of many!
+        std::vector<std::string> notes;
+        if (parser.program.currentFunction && parser.program.currentFunction->assignedGenerics)
+        {
+            notes.push_back(std::format("In instantiation of generic template function {}<{}>", parser.program.currentFunction->name, *parser.program.currentFunction->assignedGenerics));
+        }
+        printerr(*err, notes);
         ERROR("Program compilation terminated.");
         return EXIT_FAILURE;
     }

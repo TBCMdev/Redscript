@@ -5,10 +5,10 @@
 #include <sstream>
 #include <memory>
 #include <unordered_map>
-
+#include <vector>
 #include "logger.hpp"
 
-#define RS_ERROR_LINE_PADDING 2
+#define RS_ERROR_LINE_PADDING 1
 #include "errors.hpp"
 
 struct raw_trace_info
@@ -79,4 +79,4 @@ private:
 };
 
 std::string syntaxHighlight(const std::string& s);
-void printerr(rs_error&);
+void printerr(rs_error&, std::vector<std::string> = {});

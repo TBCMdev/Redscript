@@ -152,6 +152,7 @@ token_list tlex(const std::string &fName, std::string &content, rs_error *err = 
             }
             if (!found)
                 LEX_ERROR(RS_SYNTAX_ERROR, "Unterminated multi-line comment.");
+            adv();
         }
         else
         {

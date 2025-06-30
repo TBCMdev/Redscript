@@ -7,14 +7,14 @@
 #define ABORT_PARSE throw program.context
 #define COMP_ERROR(_ec, message, ...)                                    \
     {                                                                    \
-        *err = rs_error(message, content, currentToken->trace, fName, ##__VA_ARGS__);  \
-        err->trace.ec = _ec;                                             \
+        err = rs_error(message, *content, currentToken->trace, currentFile->fileName, ##__VA_ARGS__);  \
+        err.trace.ec = _ec;                                             \
         ABORT_PARSE;                                                     \
     }
 #define COMP_ERROR_R(_ec, message, ret, ...)                             \
     {                                                                    \
-        *err = rs_error(message, content, currentToken->trace, fName, ##__VA_ARGS__);  \
-        err->trace.ec = _ec;                                             \
+        err = rs_error(message, *content, currentToken->trace, currentFile->fileName, ##__VA_ARGS__);  \
+        err.trace.ec = _ec;                                             \
         ABORT_PARSE;                                                     \
     }
 
@@ -25,26 +25,23 @@ struct rbc_parser_flags
 
 struct rbc_parser
 {
-    token_list&      tokens;
+    token_list*      tokens;
 
     size_t           _At = 0;
-    size_t             S = tokens.size();
+    size_t             S = 0;
 
-    std::string&     content;
+    std::string*     content;
     rbc_program      program;
-    std::string      fName;
     rbc_parser_flags flags;
+    rs_error err;
 
-    std::shared_ptr<rs_error> err;
+    token*                            currentToken;
+    std::shared_ptr<project_fragment> currentFile;
+    fragment_ptr_deque& files;
 
-    token* currentToken;
-    rbc_parser(token_list& _tokens, std::string fName, std::string& _content, std::shared_ptr<rs_error> _err) :
-        tokens(_tokens),
-        content(_content),
-        program(_err.get()),
-        err(_err)
+    rbc_parser(fragment_ptr_deque& _files) : program(&err), files(_files)
     {
-        _err->fName = fName;
+        useNextFile();
     }
 
 #pragma region lang
@@ -61,6 +58,8 @@ struct rbc_parser
     std::shared_ptr<rs_object> inlineobjparse ();
 #pragma endregion lang
 
+    void useNextFile ();
+
     void parseCurrent ();
 
     bool   resync  ();
@@ -72,20 +71,27 @@ struct rbc_parser
     #define RS_PARSER_VARIABLE_USE_CASE 0
     #define RS_PARSER_RETURN_USE_CASE 1
     #define RS_PARSER_LIST_ITEM_USE_CASE 2
+    #define RS_PARSER_PARAMETER_USE_CASE 3
     // verifies t == val or t can convert to val, throws an error otherwise
     // use case is used to give accurate descriptions to the errors.
-    bool         typeverify (rs_type_info& t, rbc_value& val, int useCase);
+    bool         typeverify    (rs_type_info& t, rbc_value& val, int useCase);
     // parses a type
-    rs_type_info typeparse  ();
+    rs_type_info typeparse     ();
     
-    bool         callparse  (std::string& name, bool needsTermination = true, std::shared_ptr<rs_module> fromModule = nullptr);
-    
+    bool         callparse     (std::string& name,
+                                bool needsTermination = true,
+                                std::shared_ptr<rs_module> fromModule = nullptr,
+                                std::vector<rs_type_info>* genericTypes = nullptr);
+    std::shared_ptr<rbc_function_generics> 
+                 genericsparse ();
     std::shared_ptr<rs_variable>
-                 varparse   (token& name, bool needsTermination = true, bool parameter = false, bool obj = false, bool isConst = false);
+                 varparse      (token& name, bool needsTermination = true, bool parameter = false, bool obj = false, bool isConst = false);
 
     std::shared_ptr<rs_object>
-                 objparse   (std::string& name);
+                 objparse      (std::string& name);
 
-    bool parsemoduleusage   (std::shared_ptr<rs_module> currentModule);
-
+    bool parsemoduleusage      (std::shared_ptr<rs_module> currentModule);
+    
+    std::shared_ptr<rbc_function>
+        instantiateGenericFunction (const std::vector<rs_type_info>& generics, std::shared_ptr<rbc_function> function);
 };

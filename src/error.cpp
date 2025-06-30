@@ -33,12 +33,16 @@ std::string syntaxHighlight(const std::string& s)
     return result;
 }
 
-void printerr(rs_error& error)
+void printerr(rs_error& error, std::vector<std::string> notes)
 {
     std::stringstream fileStr;
     fileStr << error.fName << ':' << error.trace.line << ':' << error.trace.caret;
     ERROR("[RS:%d] %s", error.trace.ec, error.message.c_str());
-    std::cout << "\n\n\t -- " << fileStr.str() << " -- \n\n";
+
+    for (std::string& note : notes)
+        std::cout << ERROR_NOTE_COLOR <<"  [NOTE] " << note << ERROR_RESET "\n";
+    
+    std::cout << "\n\t -- " << fileStr.str() << " -- \n";
     for(size_t i = 0; i < std::min(error.trace.line - RS_ERROR_LINE_PADDING + 1, (size_t)RS_ERROR_LINE_PADDING); i++)
         std::cout << "      |\n";
 

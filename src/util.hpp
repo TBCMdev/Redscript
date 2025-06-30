@@ -49,6 +49,14 @@ template<typename T>
 struct unwrapped_shared<std::shared_ptr<T>>
 { using type = T;};
 
+template<typename _T>
+struct range
+{
+    _T low, high;
+
+public:
+    range(_T&& _low, _T&& _high) : low(_low), high(_high) {}
+};
 
 template <typename _T1, typename _T2>
 struct  result_pair

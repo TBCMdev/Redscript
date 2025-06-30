@@ -39,7 +39,45 @@ namespace rbc_commands
         }
     }
 }
+rbc_function::rbc_function(const rbc_function& other, const std::vector<rs_type_info>& resolvedGenerics)
+{
+    name = other.name;
+    scope = other.scope;
+    decorators = other.decorators;
+    instructions = other.instructions;
+    modulePath = other.modulePath;
+    parent = nullptr; // generic functions can't have parent
+    generics = other.generics;
+    assignedGenerics = std::make_shared<std::vector<rs_type_info>>(resolvedGenerics);
+    hasBody = other.hasBody;
 
+    // Deep copy parameters
+    parameters.reserve(other.parameters.size());
+    for (const auto& param : other.parameters) {
+        auto newParam = std::make_shared<rs_variable>(*param);
+        rs_type_info::resolveGenericsIn(newParam->type_info, resolvedGenerics);
+        parameters.push_back(newParam);
+    }
+
+    // Deep copy return type
+    if (other.returnType) {
+        returnType = std::make_shared<rs_type_info>(*other.returnType);
+        rs_type_info::resolveGenericsIn(*returnType, resolvedGenerics);
+    }
+
+    // Deep copy local variables
+    for (const auto& [name, varPair] : other.localVariables) {
+        const auto& [varPtr, isCaptured] = varPair;
+        auto newVar = std::make_shared<rs_variable>(*varPtr);
+        rs_type_info::resolveGenericsIn(newVar->type_info, resolvedGenerics);
+        localVariables[name] = std::make_pair(newVar, isCaptured);
+    }
+
+    // Child functions (shallow copy)
+    for (const auto& [childName, childFunc] : other.childFunctions) {
+        childFunctions[childName] = childFunc;
+    }
+}
 #pragma region decorators
 rbc_function_decorator parseDecorator(const std::string& name)
 {
@@ -89,6 +127,18 @@ std::string rbc_function::getParentHashStr()
 
     return parentHash;
 }
+std::string rbc_function::getGenericsHashStr()
+{
+    if (!generics || !assignedGenerics) return "";
+
+    std::string combined;
+    for (rs_type_info& t : *assignedGenerics) {
+        combined += t.tostr() + ';'; // delimiter to avoid ambiguity
+    }
+
+    // Optional: hash the whole string to get a compact ID
+    return util::hashToHex(combined);
+}
 std::string rbc_function::toStr()
 {
     std::stringstream stream;
@@ -107,25 +157,17 @@ std::string rbc_function::toStr()
 }
 rs_variable* rbc_function::getParameterByName(const std::string& name)
 {
-    for(auto& var : localVariables)
+    for(auto& var : parameters)
     {
-        if (var.second.second && name == var.second.first->name)
-            return var.second.first.get();
+        if (var->name == name)
+            return var.get();
     }
     return nullptr;
 }
 rs_variable* rbc_function::getNthParameter(size_t p)
 {
-    size_t pc = 0;
-    for(auto& var : localVariables)
-    {
-        if (var.second.second)
-        {
-            if (pc == p)
-                return var.second.first.get();
-            pc++;
-        }
-    }
+    if (p < parameters.size())
+        return parameters.at(p).get();
     return nullptr;
 }
 std::string rbc_function::toHumanStr()
@@ -312,7 +354,7 @@ sharedt<rbc_register> rbc_program::makeRegister(bool operable, bool vacant)
         err->trace.ec = _ec;                                             \
         return;                                                    \
     }
-void preprocess(token_list& tokens, std::string fName, std::string& content, rs_error* err,
+void preprocess(token_list& tokens, std::string fName, std::string& content, rs_error* err, fragment_ptr_deque& fragments,
                 std::shared_ptr<std::vector<std::filesystem::path>> visited)
 {
     long long       _At = 0;
@@ -361,26 +403,26 @@ void preprocess(token_list& tokens, std::string fName, std::string& content, rs_
 
                 if (_At + 1 >= S || tokens.at(++_At).type != token_type::LINE_END)
                     PRE_PROCESS_ERROR(RS_SYNTAX_ERROR, "Missing semicolon.");
-                std::string filePathStr = filePath.string();
+                std::string filePathStr = filePath.filename().string();
                 token_list fileTokens = tlex(filePathStr, fileContent, err);
 
-                preprocess(fileTokens, filePathStr, fileContent, err, visited);
+                preprocess(fileTokens, filePathStr, fileContent, err, fragments, visited);
 
                 if(err->trace.ec)
                     return;
-                const size_t offset = fileContent.length() + 1; // + 1 for \n
-                // const auto   lines  = std::count(fileContent.begin(), fileContent.end(), '\n');
-                for(size_t i = 0; i < tokens.size(); i++)
-                {
-                    raw_trace_info& trace = tokens.at(i).trace;
+                // OLD: TODO REMOVE
+                // const size_t offset = fileContent.length() + 1; // + 1 for \n
+                // for(size_t i = 0; i < tokens.size(); i++)
+                // {
+                //     raw_trace_info& trace = tokens.at(i).trace;
 
-                    trace.at += offset;
-                    trace.nlindex += offset;
-                }
-                tokens.insert(tokens.begin(), fileTokens.begin(), fileTokens.end());
+                //     trace.at += offset;
+                //     trace.nlindex += offset;
+                // }
+                // tokens.insert(tokens.begin(), fileTokens.begin(), fileTokens.end());
 
-                content = fileContent + '\n' + content;
-                _At += fileTokens.size();
+                // content = fileContent + '\n' + content;
+                // _At += fileTokens.size();
 
                 break;
             }
@@ -388,6 +430,9 @@ void preprocess(token_list& tokens, std::string fName, std::string& content, rs_
                 break;
         }
     } while(++_At < S);
+
+    fragments.push_back(std::make_shared<project_fragment>(fName, content, tokens));
+
 }
 #define RS_ASSERTC(C, m) if (!(C)) {err=m;return {};}
 #define RS_ASSERT_SIZE(C) RS_ASSERTC(C, "Invalid byte code parameter count. This error is a bug, flag it on github.")
@@ -908,7 +953,7 @@ mc_program tomc(rbc_program& program, const std::string& moduleName, std::string
         return list;
     };
     
-    // try{
+    try{
         mcprogram.globalFunction.commands = parseFunction(program.globalFunction.instructions);
 
         std::vector<std::shared_ptr<rbc_function>> allFunctions;
@@ -963,18 +1008,37 @@ mc_program tomc(rbc_program& program, const std::string& moduleName, std::string
                 std::find(decorators.begin(), decorators.end(), rbc_function_decorator::EXTERN) == decorators.end()
             ) // not inbuilt function 
             {
-                mc_function f{function->name,
-                              parseFunction(function->instructions),
-                              function->modulePath};
-                f.parentalHashStr = function->getParentHashStr();
-                mcprogram.functions.push_back(f);
+                // todo clean up
+                if (function->generics)
+                {
+                    rbc_function_generics& generics = *function->generics;
+
+                    for (auto& entry : generics.variations)
+                    {
+                        mc_function f{entry.second->name,
+                              parseFunction(entry.second->instructions),
+                              entry.second->modulePath};
+                        f.parentalHashStr = entry.second->getParentHashStr();
+                        f.genericHashStr  = entry.second->getGenericsHashStr();
+
+                        mcprogram.functions.push_back(f);
+                    }
+                }
+                else
+                {
+                    mc_function f{function->name,
+                                parseFunction(function->instructions),
+                                function->modulePath};
+                    f.parentalHashStr = function->getParentHashStr();
+                    mcprogram.functions.push_back(f);
+                }
             }
         }
-    // } catch (std::exception& e)
-    // {
-    //     err = std::string("Internal error: ") + e.what();
-    //     return mcprogram;
-    // }
+    } catch (std::exception& e)
+    {
+        err = std::string("Internal error: ") + e.what();
+        return mcprogram;
+    }
     factory.initProgram();
     mccmdlist init = factory.package();
     mcprogram.globalFunction.commands.insert(mcprogram.globalFunction.commands.begin(), init.begin(), init.end());
@@ -1045,15 +1109,20 @@ namespace conversion
         std::string parentHashStr = func.getParentHashStr();
         if (!parentHashStr.empty()) parentHashStr.push_back('_');
 
+        std::string name = parentHashStr + func.name;
+
+        if (func.assignedGenerics)
+            name += "_g_" + func.getGenericsHashStr();
+
         if (func.modulePath.empty())
-            create_and_push(MC_FUNCTION_CMD_ID, module + ':' + parentHashStr + func.name);
+            create_and_push(MC_FUNCTION_CMD_ID, module + ':' + name);
         else
         {
             std::string path;
             for(std::string& s : func.modulePath)
                 path += s + '/';
 
-            create_and_push(MC_FUNCTION_CMD_ID, module + ':' + path + parentHashStr + func.name);
+            create_and_push(MC_FUNCTION_CMD_ID, module + ':' + path + name);
         }
         return THIS;
     }

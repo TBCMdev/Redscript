@@ -1,5 +1,9 @@
-z:
-	CREATE {{x, 0, 0, 5}, name=x, scope=1, typeinf=1, (g=0, c=0)}, (const){T=1, v=12}
-	RET {{x, 0, 0, 5}, name=x, scope=1, typeinf=1, (g=0, c=0)}
-CREATE {{y, 0, 0, 0}, name=y, scope=0, typeinf=1, (g=1, c=0)}, (const){T=1, v=45}
-CREATE {{x, 0, 0, 1}, name=x, scope=0, typeinf=1[1], (g=1, c=0)}, 
+x:
+kill:
+msg:
+PUSH (const){T=2, v=x}, (const){T=2, v=p}, (const){T=1, v=4}
+CALL 
+POP 
+PUSH (const){T=2, v=x}, (const){T=2, v=p}, (const){T=2, v=Hello!}
+CALL 
+POP 

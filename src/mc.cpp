@@ -236,17 +236,24 @@ void writemc(mc_program &program, std::string name, const std::string &path, std
             err = std::format("Could not write function to '{}'.", to.string());
             return;
         }
-        for (auto &function : program.functions)
+        for (mc_function &function : program.functions)
         {
 
             std::filesystem::path parentHashPath;
 
+            std::string name;
+            if (function.parentalHashStr.empty())
+                name = function.name;
+            else
+                name = function.parentalHashStr + '_' + function.name;
+
+            if (!function.genericHashStr.empty())
+                name += "_g_" + function.genericHashStr;
+            name += ".mcfunction";
+
             if (function.modulePath.size() == 0)
             {
-                if (function.parentalHashStr.empty())
-                    to = funcPath / (function.name + ".mcfunction");
-                else
-                    to = funcPath / (function.parentalHashStr + '_' + function.name + ".mcfunction");
+                to = funcPath / name;
             }
             else
             {
@@ -259,10 +266,7 @@ void writemc(mc_program &program, std::string name, const std::string &path, std
                     std::filesystem::create_directory(to);
                 }
 
-                if (function.parentalHashStr.empty())
-                    to /= (function.name + ".mcfunction");
-                else
-                    to /= (function.parentalHashStr + '_' + function.name + ".mcfunction");
+                to /= funcPath / name;
             }
             if (!writeFunction(function, to))
                 goto _error;
