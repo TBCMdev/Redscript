@@ -1,9 +1,7 @@
 x:
 kill:
 msg:
-PUSH (const){T=2, v=x}, (const){T=2, v=p}, (const){T=1, v=4}
-CALL 
-POP 
-PUSH (const){T=2, v=x}, (const){T=2, v=p}, (const){T=2, v=Hello!}
+CREATE {{iarray, 0, 0, 6}, name=iarray, scope=0, typeinf=1[1], (g=1, c=0)}, 
+PUSH (const){T=2, v=x}, (const){T=2, v=p}, {{iarray, 0, 0, 6}, name=iarray, scope=0, typeinf=1[1], (g=1, c=0)}
 CALL 
 POP 

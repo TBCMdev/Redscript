@@ -20,8 +20,8 @@ you can use this to attach extra data to your variables.
 */
 // method: void setattr (__v: any, __attr: string!, __val: any)  __cpp__;
 
-method<_Type>: void msg  (__p: selector!, __msg: _Type)               __cpp__;
-method:    void kill (__p: selector!)                         __cpp__;
+method<_Type>: void msg  (__p: selector!, __msg: _Type?)       __cpp__;
+method:    void kill     (__p: selector!)                     __cpp__;
 
 // more to come
 

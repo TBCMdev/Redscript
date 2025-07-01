@@ -1,10 +1,12 @@
 use lang;
-
-method<T>: void x(p: T)
+//                p: T[] doesn't yield error
+method<T>: void x(p: T?[]?) // turns into (int[]?[]?)[]?
 {
-    y: T = p;
-    msg(@r, y);
+    msg(@r, p);
 }
+iarray: int[]? = [4, 3, 2];
+x<int[]?>(iarray); // T = int[]?[]?
 
-x<int>(4);
-x<string>("Hello!"); // error
+
+// int[][]? -> T?[]?
+    //    -> int[][]?[]?

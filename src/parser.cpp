@@ -506,7 +506,6 @@ rs_type_info                 rbc_parser::typeparse        ()
 {
 
     rs_type_info tinfo;
-_get_type:
     token* next = adv();
 
     if(!next)
@@ -567,11 +566,21 @@ _after_type:
     }
 
     uint arrayCount = tinfo.array_count;
+    std::vector<std::pair<bool, bool>> arrayFlags;
     while ((next = follows(token_type::SQBRACKET_OPEN)))
     {
         arrayCount++;
+        std::pair<bool, bool> flag;
+        
         if(!match(token_type::SQBRACKET_CLOSED))
             COMP_ERROR_R(RS_SYNTAX_ERROR, "Unclosed type specified array.", tinfo);
+
+        if (match(token_type::SYMBOL, '?'))
+            flag.first = true;
+        if (match(token_type::SYMBOL, '!'))
+            flag.second = true;
+
+        arrayFlags.push_back(flag);
     }
     if(tinfo.type_id == -1)
     {
@@ -581,16 +590,20 @@ _after_type:
         tinfo.array_count = arrayCount;
         tinfo.generic     = genericID != -1;
         tinfo.generic_id  = genericID;
+        tinfo.arrayFlags  = arrayFlags;
     }
     else if (convertedFromGeneric)
     {
         tinfo.array_count += arrayCount;
+        tinfo.arrayFlags.insert(tinfo.arrayFlags.begin(), arrayFlags.begin(), arrayFlags.end());
     } else
-        tinfo.otherTypes.push_back(rs_type_info{typeID, arrayCount, optional, strict, genericID != -1, genericID});
+        tinfo.otherTypes.push_back(rs_type_info{typeID, arrayCount, optional, strict, genericID != -1, genericID, {}, arrayFlags});
     if(!adv())
         COMP_ERROR_R(RS_SYNTAX_ERROR, "Missing semicolon.", tinfo);
 
-    if (currentToken->info == '|') goto _get_type;
+    if (currentToken->info == '|')
+        COMP_ERROR(RS_SYNTAX_ERROR, "Union types are deprecated as of this version.");
+
     if (currentToken->info == '?' || currentToken->info == '!')
         COMP_ERROR_R(RS_SYNTAX_ERROR, "Invalid type notation.", tinfo);
     return tinfo;
@@ -746,6 +759,7 @@ bool                         rbc_parser::callparse        (std::string& name,
             function = iter->second;
         else
         {
+
             std::shared_ptr<rbc_function> compiledFunc = instantiateGenericFunction(types, function);
             
             function->generics->variations.insert({types, compiledFunc});
