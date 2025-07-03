@@ -35,12 +35,15 @@ enum class token_type
     MODULE_ACCESS,
 
     SYMBOL,
-
+    
+    TYPE_DEF,
+    LINE_END,
+    
     /* -- KEYWORDS -- */
+#define TT_KEYWORDS_BEGIN static_cast<int>(token_type::KW_OR)
     KW_OR, KW_AND, KW_NOT,
     KW_TRUE, KW_FALSE,
 
-    TYPE_DEF,
 
     KW_INT_TYPE,
     KW_FLOAT_TYPE,
@@ -71,8 +74,93 @@ enum class token_type
     KW_ASM,
     KW_NULL,
 
-    LINE_END
+#define TT_KEYWORDS_END static_cast<int>(token_type::KW_NULL)
+};
 
+namespace tutil
+{
+    inline constexpr std::string type_to_str(const token_type& tt)
+    {
+        switch (tt)
+        {
+            case token_type::WORD: return "word";
+            case token_type::INT_LITERAL: return "int literal";
+            case token_type::STRING_LITERAL: return "string literal";
+            case token_type::FLOAT_LITERAL: return "float literal";
+            case token_type::LIST_LITERAL: return "list literal";
+            case token_type::OBJECT_LITERAL: return "object literal";
+            case token_type::SELECTOR_LITERAL: return "selector literal";
+
+            case token_type::COMMENT_INLINE: return "inline comment";
+            case token_type::COMMENT_MULTILINE: return "multiline comment";
+
+            case token_type::BRACKET_OPEN: return "bracket open";
+            case token_type::BRACKET_CLOSED: return "bracket closed";
+            case token_type::CBRACKET_OPEN: return "curly bracket open";
+            case token_type::CBRACKET_CLOSED: return "curly bracket closed";
+            case token_type::SQBRACKET_OPEN: return "square bracket open";
+            case token_type::SQBRACKET_CLOSED: return "square bracket closed";
+            case token_type::UNKNOWN: return "unknown";
+
+            case token_type::OPERATOR: return "operator";
+            case token_type::VAR_OPERATOR: return "variable operator";
+            case token_type::COMPARE_EQUAL: return "==";
+            case token_type::COMPARE_NOTEQUAL: return "!=";
+            case token_type::MODULE_ACCESS: return "::";
+
+            case token_type::SYMBOL: return "symbol";
+
+            case token_type::KW_OR: return "or";
+            case token_type::KW_AND: return "and";
+            case token_type::KW_NOT: return "not";
+            case token_type::KW_TRUE: return "true";
+            case token_type::KW_FALSE: return "false";
+
+            case token_type::TYPE_DEF: return "type definition";
+
+            case token_type::KW_INT_TYPE: return "int";
+            case token_type::KW_FLOAT_TYPE: return "float";
+            case token_type::KW_BOOL_TYPE: return "bool";
+            case token_type::KW_STRING_TYPE: return "string";
+            case token_type::KW_LIST_TYPE: return "list";
+            case token_type::KW_OBJECT_TYPE: return "object";
+            case token_type::KW_ANY_TYPE: return "any";
+
+            case token_type::KW_MODULE: return "module";
+            case token_type::KW_RETURN: return "return";
+            case token_type::KW_METHOD: return "method";
+            case token_type::KW_USE: return "use";
+            case token_type::KW_IF: return "if";
+            case token_type::KW_ELSE: return "else";
+            case token_type::KW_ELIF: return "elif";
+
+            case token_type::KW_CONST: return "const";
+            case token_type::KW_OPTIONAL: return "optional";
+            case token_type::KW_REQUIRED: return "required";
+            case token_type::KW_SEPERATE: return "separate";
+
+            case token_type::KW_FOR: return "for";
+            case token_type::KW_WHILE: return "while";
+            case token_type::KW_IN: return "in";
+            case token_type::KW_BREAK: return "break";
+            case token_type::KW_CONTINUE: return "continue";
+
+            case token_type::KW_ASM: return "asm";
+            case token_type::KW_NULL: return "null";
+
+            case token_type::LINE_END: return "semicolon";
+
+            default: return "unrecognized";
+        }
+    }
+    inline constexpr std::string type_to_str_full(const token_type& tt)
+    {
+        const int index = static_cast<int>(tt);
+        const std::string result = type_to_str(tt);
+        if (index >= TT_KEYWORDS_BEGIN && index <= TT_KEYWORDS_END)
+            return '\'' + result + "' keyword.";
+        return result;
+    }
 };
 
 struct token

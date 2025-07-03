@@ -5,8 +5,9 @@
 #include "logger.hpp"
 #include "rbc.hpp"
 #include "config.hpp"
+#ifdef _WIN32
 #include "getopt.h"
-
+#endif
 #include "parser.hpp"
 
 int main(int argc, char* const* argv)

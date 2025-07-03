@@ -68,6 +68,23 @@ struct rbc_parser
     token* peek    (int x = 1);
     token* follows (token_type tt, int info = -1);
 
+    void expect    (token_type tt, std::string msg, int info = -1);
+    void expect    (token_type tt, int info = -1);
+    void expect    (char info, token_type tt = token_type::SYMBOL);
+
+    void nexpect   (token_type tt, int info = -1);
+    void nexpect   (char info = 0, token_type tt = token_type::SYMBOL);
+
+    template<typename... _Infos>
+    void expect_any (_Infos&&... chars);
+
+
+    template<typename... _Infos>
+    inline constexpr void nexpect(_Infos&&... chars)
+    { ( nexpect(token_type::SYMBOL, std::forward<_Infos>(chars)), ... ); }
+
+    
+
     #define RS_PARSER_VARIABLE_USE_CASE 0
     #define RS_PARSER_RETURN_USE_CASE 1
     #define RS_PARSER_LIST_ITEM_USE_CASE 2

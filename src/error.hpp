@@ -41,7 +41,9 @@ struct rs_error
              std::string        _fName,
              _Args&&...         _variables) :
                     trace(_trace),
-                    message(std::vformat(_message, std::make_format_args(std::forward<_Args>(_variables)...))),
+                    message(std::vformat(
+                        std::string_view(_message),
+                        std::make_format_args(std::forward<_Args>(_variables)...))),
                     fName(_fName),
                     content(std::make_shared<std::string>(_content))
     {
@@ -54,7 +56,9 @@ struct rs_error
             std::string        _fName,
             _Args&&...         _variables) :
                trace{0, std::make_shared<size_t>(_raw.at), _raw.line, _raw.caret, _raw.nlindex, _raw.start},
-               message(std::vformat(_message, std::make_format_args(std::forward<_Args>(_variables)...))),
+               message(std::vformat(
+                        std::string_view(_message),
+                        std::make_format_args(std::forward<_Args>(_variables)...))),
                fName(_fName),
                content(std::make_shared<std::string>(_content))
     {

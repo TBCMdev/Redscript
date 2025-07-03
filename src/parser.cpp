@@ -15,8 +15,7 @@ std::shared_ptr<rs_object>   rbc_parser::inlineobjparse   ()
         if (obj.members.find(name) != obj.members.end())
             COMP_ERROR(RS_SYNTAX_ERROR, "Duplicate object field.");
 
-        if (!adv())
-            break;
+        adv();
         token& sep = *currentToken;
         if (sep.type != token_type::SYMBOL || sep.info != ':')
             COMP_ERROR(RS_SYNTAX_ERROR, "Expected ':'.");
@@ -427,7 +426,7 @@ token*                       rbc_parser::adv              (int i)
     if (_At + i >= S)
     {
         if (files.empty())
-            return nullptr;
+            ABORT_PARSE;
         
         useNextFile();
     }
@@ -453,7 +452,7 @@ token*                       rbc_parser::peek             (int x)
 
     return t;
 };
-bool                         rbc_parser::match            (token_type tt, int info)
+bool                         rbc_parser::match             (token_type tt, int info)
 {
     token* next = peek();
     if(next && next->type == tt)
@@ -466,7 +465,78 @@ bool                         rbc_parser::match            (token_type tt, int in
 
     return false;
 };
-token*                       rbc_parser::follows          (token_type tt, int info)
+void                         rbc_parser::expect            (token_type tt, std::string msg, int info)
+{
+    if (currentToken->type != tt)
+    {
+        std::string s = tutil::type_to_str_full(tt);
+        COMP_ERROR(RS_SYNTAX_ERROR, msg, s);
+    }
+    if (info > -1 && currentToken->info != info)
+    {
+        std::string s = tutil::type_to_str_full(tt);
+        COMP_ERROR(RS_SYNTAX_ERROR, msg, s, info);
+    }
+}
+
+void                         rbc_parser::expect            (token_type tt, int info)
+{
+    if (currentToken->type != tt)
+    {
+        std::string s = tutil::type_to_str_full(tt);
+        COMP_ERROR(RS_SYNTAX_ERROR, "Expected {}.", s);
+    }
+    if (info > -1 && currentToken->info != info)
+    {
+        std::string s = tutil::type_to_str_full(tt);
+        COMP_ERROR(RS_SYNTAX_ERROR, "Expected special {} (id: {})", s, info);
+    }
+}
+void                         rbc_parser::expect            (char info, token_type tt)
+{
+    if (currentToken->type != tt)
+        COMP_ERROR(RS_SYNTAX_ERROR, "Expected '{}'.", info);
+    if (info > -1 && currentToken->info != info)
+        COMP_ERROR(RS_SYNTAX_ERROR, "Expected special '{}'.", info);
+}
+// bad impl may change
+template<typename... _Infos>
+void rbc_parser::expect_any(_Infos&&... chars)
+{
+    bool match_found = ((currentToken->info == chars && chars > -1) || ...);
+
+    if (!match_found)
+        COMP_ERROR(RS_SYNTAX_ERROR, "Unexpected token.");
+}
+
+
+void                         rbc_parser::nexpect            (token_type tt, int info)
+{
+    if (currentToken->type == tt)
+    {
+        std::string s = tutil::type_to_str_full(tt);
+        COMP_ERROR(RS_SYNTAX_ERROR, "Unexpected token of type {}.", s);
+    }
+    if (info == -1 && currentToken->info == info)
+    {
+        std::string s = tutil::type_to_str_full(tt);
+        COMP_ERROR(RS_SYNTAX_ERROR, "Unexpected specific token of type {} (id: {})", s, info);
+    }
+}
+void                         rbc_parser::nexpect            (char info, token_type tt)
+{
+    if (currentToken->type == tt)
+    {
+        std::string s = tutil::type_to_str_full(tt);
+        COMP_ERROR(RS_SYNTAX_ERROR, "Unexpected token of type {}.", s);
+    }
+    if (info == -1 && currentToken->info == info)
+    {
+        std::string s = tutil::type_to_str_full(tt);
+        COMP_ERROR(RS_SYNTAX_ERROR, "Unexpected specific token of type {} (id: {})", s, info);
+    }
+}
+token*                       rbc_parser::follows           (token_type tt, int info)
 {
     token* next = peek();
     if(next && next->type == tt)
@@ -506,11 +576,8 @@ rs_type_info                 rbc_parser::typeparse        ()
 {
 
     rs_type_info tinfo;
+    
     token* next = adv();
-
-    if(!next)
-        COMP_ERROR_R(RS_EOF_ERROR, "Expected type, not EOF.", tinfo);
-
 
     int typeID     = next->info;
     int genericID  = -1;
@@ -598,14 +665,10 @@ _after_type:
         tinfo.arrayFlags.insert(tinfo.arrayFlags.begin(), arrayFlags.begin(), arrayFlags.end());
     } else
         tinfo.otherTypes.push_back(rs_type_info{typeID, arrayCount, optional, strict, genericID != -1, genericID, {}, arrayFlags});
-    if(!adv())
-        COMP_ERROR_R(RS_SYNTAX_ERROR, "Missing semicolon.", tinfo);
+    adv();
 
-    if (currentToken->info == '|')
-        COMP_ERROR(RS_SYNTAX_ERROR, "Union types are deprecated as of this version.");
+    nexpect('?', '|', '!');
 
-    if (currentToken->info == '?' || currentToken->info == '!')
-        COMP_ERROR_R(RS_SYNTAX_ERROR, "Invalid type notation.", tinfo);
     return tinfo;
 };
 
@@ -625,9 +688,8 @@ std::shared_ptr<rbc_function_generics> rbc_parser::genericsparse ()
             adv();
         }
 
-        if (currentToken->type != token_type::WORD)
-            COMP_ERROR(RS_SYNTAX_ERROR, "Expected generic name.");
-        
+        expect(token_type::WORD);
+
         std::string genericName = currentToken->repr;
         if (program.currentGenericTypes.find(genericName) != program.currentGenericTypes.end())
             COMP_ERROR(RS_SYNTAX_ERROR, "Expected generic type name.");
@@ -635,8 +697,8 @@ std::shared_ptr<rbc_function_generics> rbc_parser::genericsparse ()
         generics->entries.insert({genericName, isObjOnly});
         adv();
         info = currentToken->info;
-        if (info != ',' && info != '>')
-            COMP_ERROR(RS_SYNTAX_ERROR, "Unexpected token.");
+
+        expect_any(',', '>');
     } while (info != '>');
     
     return generics;
@@ -846,8 +908,11 @@ bool                         rbc_parser::callparse        (std::string& name,
         for(size_t i = 0; i < pc; i++)
             program(rbc_command(rbc_instruction::POP));
 
-    if (needsTermination && adv() && currentToken->type != token_type::LINE_END)
-        COMP_ERROR_R(RS_SYNTAX_ERROR, "Missing semi-colon.", false);
+    if (needsTermination)
+    {
+        adv();
+        expect(token_type::LINE_END);
+    }
     return true;
 }
 std::shared_ptr<rs_variable> rbc_parser::varparse         (token& name, bool needsTermination, bool parameter, bool obj, bool isConst)
@@ -895,8 +960,7 @@ _skip_type:
         if (!needsCreation && isConst)
             COMP_ERROR_R(RS_SYNTAX_ERROR, "Cannot reassign constant variable", nullptr);
 
-        if(!adv())
-            COMP_ERROR_R(RS_EOF_ERROR, "Expected expression, not EOF.", nullptr);
+        adv();
         token* next = nullptr;
         if (currentToken->type == token_type::WORD && (next = peek()) && next->type == token_type::BRACKET_OPEN)
         {
@@ -917,8 +981,10 @@ _skip_type:
 
             if (!callparse(funcname, false, nullptr))
                 return nullptr;
-            if (!adv() || currentToken->type != token_type::LINE_END)
-                COMP_ERROR_R(RS_SYNTAX_ERROR, "Missing semi-colon. This error can arise if you are calling a function within an expression. Function calls are not allowed in arithmetic expressions.", nullptr);
+            adv();
+
+            expect(token_type::LINE_END, "Missing semi-colon. This error can arise if you are calling a function within an expression. Function calls are not allowed in arithmetic expressions.");
+
             if (needsCreation)
                 program(rbc_commands::variables::create(variable));
 
@@ -988,8 +1054,9 @@ _skip_type:
     }
 
     resync();
-    if (needsTermination && currentToken->type != token_type::LINE_END)
-        COMP_ERROR_R(RS_SYNTAX_ERROR, "Expected semi-colon to end expression.", nullptr);
+
+    if (needsTermination)
+        expect(token_type::LINE_END);
 
     if (!exists && variable && !obj)
     {
@@ -1010,8 +1077,7 @@ bool                         rbc_parser::parsemoduleusage (std::shared_ptr<rs_mo
 {
     do
     {
-        if(!adv())
-            COMP_ERROR_R(RS_SYNTAX_ERROR, "Expected function or module name, not EOF.", false);
+        adv();
         auto module_iter = currentModule->children.find(currentToken->repr);
         if (module_iter == currentModule->children.end())
             break; // could be invalid name, or function name.
@@ -1031,8 +1097,9 @@ bool                         rbc_parser::parsemoduleusage (std::shared_ptr<rs_mo
 }
 std::shared_ptr<rs_object>   rbc_parser::objparse         (std::string& name)
 {
-    if (currentToken->type != token_type::CBRACKET_OPEN)
-        COMP_ERROR_R(RS_SYNTAX_ERROR, "Expected object body.", nullptr);
+    expect(token_type::CBRACKET_OPEN);
+
+
     rs_object obj{name, program.currentScope};
     rs_object_member_decorator decorator = rs_object_member_decorator::OPTIONAL;
     while(adv() && currentToken->type != token_type::CBRACKET_CLOSED)
@@ -1053,9 +1120,10 @@ std::shared_ptr<rs_object>   rbc_parser::objparse         (std::string& name)
                     decorator = rs_object_member_decorator::REQUIRED;
                 else if (t == token_type::KW_SEPERATE)
                     decorator = rs_object_member_decorator::SEPERATE;
+
+                adv();
+                expect(token_type::WORD);
                 
-                if (!adv() || currentToken->type != token_type::WORD)
-                    COMP_ERROR_R(RS_SYNTAX_ERROR, "Expected variable definition.", nullptr);
                 name = currentToken;
                 break;
             }
@@ -1092,8 +1160,8 @@ void                         rbc_parser::parseCurrent     ()
                 while(currentToken->info != '>')
                 {
                     types.push_back(typeparse());
-                    if (currentToken->info != ',' && currentToken->info != '>')
-                        COMP_ERROR(RS_SYNTAX_ERROR, "Unexpected token.");
+
+                    expect_any(',', '>');
                 }
                 if (!resync()) COMP_ERROR(RS_EOF_ERROR, "Unexpected EOF.");
                 adv();
@@ -1144,8 +1212,7 @@ void                         rbc_parser::parseCurrent     ()
     }
     case token_type::KW_MODULE:
     {
-        if(!adv())
-            COMP_ERROR(RS_EOF_ERROR, "Expected module, not EOF.");
+        adv();
         if(program.currentFunction)
             COMP_ERROR(RS_SYNTAX_ERROR, "Modules are not allowed in a function body.");
         std::string name = currentToken->repr;
@@ -1170,17 +1237,15 @@ void                         rbc_parser::parseCurrent     ()
         program.scopeStack.push(rbc_scope_type::MODULE);
 
 
-
-        if(!adv() || currentToken->type != token_type::CBRACKET_OPEN)
-            COMP_ERROR(RS_EOF_ERROR, "Expected opening parenthesis.");
+        adv();
+        expect(token_type::CBRACKET_OPEN);
         // don't change scope!
         break;
     }
     case token_type::KW_METHOD:
     {
 #pragma region function_definitions
-        if (!adv())
-            COMP_ERROR(RS_EOF_ERROR, "Expected name, not EOF.");
+        adv();
         
         rs_type_info retType;
         std::string name;
@@ -1219,12 +1284,10 @@ void                         rbc_parser::parseCurrent     ()
             ABORT_PARSE;
         if(retType.equals(RS_NULL_KW_ID))
             COMP_ERROR(RS_SYNTAX_ERROR, "A functions' return type cannot be marked as null, use 'void' instead.");            
-        name = currentToken->repr;
         
-        if(currentToken->type == token_type::WORD)
-            name = currentToken->repr;
-        else
-            COMP_ERROR(RS_SYNTAX_ERROR, "Invalid function name.");
+        expect(token_type::WORD);
+
+        name = currentToken->repr;
         
         if (program.currentModule)
         {
@@ -1235,12 +1298,9 @@ void                         rbc_parser::parseCurrent     ()
         else if (program.functions.find(name) != program.functions.end())
             COMP_ERROR(RS_SYNTAX_ERROR, "Function already exists.");
 
-
-        if (!adv())
-            COMP_ERROR(RS_SYNTAX_ERROR, "Expected function definition, not EOF.");  
+        adv();
         
-        if(currentToken->type != token_type::BRACKET_OPEN)
-            COMP_ERROR(RS_SYNTAX_ERROR, "Expected '('.");
+        expect(token_type::BRACKET_OPEN);
         
         for(char c : name)
         {
@@ -1271,8 +1331,7 @@ void                         rbc_parser::parseCurrent     ()
                 case token_type::WORD:
                 {
                     token& varName = *currentToken;
-                    if (!adv())
-                        COMP_ERROR(RS_EOF_ERROR, "Unexpected EOF.");
+                    adv();
                     // false as we do not need to terminate variable usage with ; or =
                     if (!varparse(varName, false, true)) // varparse adds any instructions to program.currentFunction
                         ABORT_PARSE;
@@ -1446,8 +1505,7 @@ void                         rbc_parser::parseCurrent     ()
         if (!program.currentFunction)
             COMP_ERROR(RS_SYNTAX_ERROR, "Return statements can only exist inside a function.");
         
-        if (!adv())
-            COMP_ERROR(RS_SYNTAX_ERROR, "Expected expression.");
+        adv();
         
         if (currentToken->type == token_type::LINE_END)
         {
@@ -1483,12 +1541,11 @@ void                         rbc_parser::parseCurrent     ()
     case token_type::KW_IF:
     {
     _parseif:
-        if (!adv() || currentToken->type != token_type::BRACKET_OPEN)
-            COMP_ERROR(RS_SYNTAX_ERROR, "Unexpected token.");
+        adv();
+        expect(token_type::BRACKET_OPEN);
             
     _parseifagain: // for and and or keywords
-        if(!adv())
-            COMP_ERROR(RS_SYNTAX_ERROR, "Expected expression, not EOF.");
+        adv();
         // br = true as if we hit the closing bracket of the if statement we should return.
         rs_expression left = expreval(true, false, false);
         if(err.trace.ec)
@@ -1503,11 +1560,9 @@ void                         rbc_parser::parseCurrent     ()
         {
             program(rbc_command(flags.parsingelif ? rbc_instruction::ELIF : rbc_instruction::IF, lVal));
         end_if_parse:
-            if (!adv())
-                COMP_ERROR(RS_EOF_ERROR, "Unexpected EOF.");
+            adv();
 
-            if (currentToken->type != token_type::CBRACKET_OPEN)
-                COMP_ERROR(RS_SYNTAX_ERROR, "Unexpected token.");
+            expect(token_type::CBRACKET_OPEN);
             
             program.currentScope++;
             program.scopeStack.push(flags.parsingelif ? rbc_scope_type::ELIF : rbc_scope_type::IF);
@@ -1519,8 +1574,7 @@ void                         rbc_parser::parseCurrent     ()
         if(compop != token_type::COMPARE_EQUAL && compop != token_type::COMPARE_NOTEQUAL)
             COMP_ERROR(RS_SYNTAX_ERROR, "Unexpected token.");
 
-        if(!adv())
-            COMP_ERROR(RS_SYNTAX_ERROR, "Expected expression, not EOF.");
+        adv();
         // br = true as if we hit the closing bracket of the if statement we should return.
         // prune = false as expreval has mismatching problems after when encountering this ).
         // horrible code having 4 boolean flags, maybe make struct.
@@ -1537,8 +1591,7 @@ void                         rbc_parser::parseCurrent     ()
         {
             case token_type::KW_AND:
             case token_type::KW_OR:
-                if(!adv())
-                    COMP_ERROR(RS_SYNTAX_ERROR, "Expected expression, not EOF.");
+                adv();
                 goto _parseifagain;
             case token_type::BRACKET_CLOSED:
                 break;
@@ -1563,8 +1616,8 @@ void                         rbc_parser::parseCurrent     ()
         if (program.lastScope != rbc_scope_type::IF && program.lastScope != rbc_scope_type::ELIF)
             COMP_ERROR(RS_SYNTAX_ERROR, "Else and elif blocks can only be used after an if block.");
         
-
-        if (!adv() || currentToken->type != token_type::CBRACKET_OPEN)
+        adv();
+        if (currentToken->type != token_type::CBRACKET_OPEN)
             COMP_ERROR(RS_SYNTAX_ERROR, "Expected else block.");
         
         program.scopeStack.push(rbc_scope_type::ELSE);
@@ -1578,13 +1631,12 @@ void                         rbc_parser::parseCurrent     ()
         {
             case RS_OBJECT_KW_ID:
             {
-                if (!adv())
-                    COMP_ERROR(RS_EOF_ERROR, "Unexpected EOF.");
+                adv();
                 
                 std::string& name = currentToken->repr;
 
-                if (currentToken->type != token_type::WORD)
-                    COMP_ERROR(RS_SYNTAX_ERROR, "Unexpected keyword.");
+                
+                expect(token_type::WORD);
 
                 if (program.objectTypes.find(name) != program.objectTypes.end())
                     COMP_ERROR(RS_SYNTAX_ERROR, "Object with name already exists.");
