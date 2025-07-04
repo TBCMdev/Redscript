@@ -182,6 +182,25 @@ std::string rbc_function::toHumanStr()
 
     return stream.str();
 }
+std::string rbc_function::toSignatureStr()
+{
+    std::stringstream stream;
+
+    stream << name << '(';
+
+    const size_t S = parameters.size();
+
+    for(size_t i = 0; i < S; i++)
+    {
+        auto& at = *parameters.at(i);
+        if (at._const)
+            stream << "const ";
+        if (at.ref)
+            stream << "ref ";
+        stream << at.name << ": " << at.type_info.tostr() + ((i != S - 1) ? ", " : ")");
+    }
+    return stream.str();
+}
 std::string rbc_command::tostr()
 {
     std::stringstream stream;
@@ -340,6 +359,19 @@ sharedt<rbc_register> rbc_program::getFreeRegister(bool operable)
         }
     }
     return nullptr;
+}
+
+std::vector<std::string> rbc_program::callStackStr()
+{
+    std::vector<std::string> x;
+
+    for (auto& func : functionStack)
+        x.push_back(func->toSignatureStr());
+
+    if (currentFunction)
+        x.push_back(currentFunction->toSignatureStr());
+
+    return x;
 }
 sharedt<rbc_register> rbc_program::makeRegister(bool operable, bool vacant)
 {

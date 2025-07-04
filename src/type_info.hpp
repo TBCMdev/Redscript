@@ -88,13 +88,11 @@ struct rs_type_info
     }
     inline bool operator==(const rs_type_info& rhs) const
     { return equals(rhs); }
-
     constexpr static inline bool typeDecoratorsEqualOrConvertable(const std::pair<bool, bool> lhs, const std::pair<bool, bool> rhs)
     {
         // first index is optional, second is strict
         return ((rhs.first && !lhs.second) || rhs.first == lhs.first || rhs.second == lhs.second);
     }
-
     static inline void resolveGenericsIn(rs_type_info& info, const std::vector<rs_type_info>& generics, bool _explicit = true)
     {
         if (info.generic && info.generic_id >= 0 && info.generic_id < (int)generics.size())
@@ -114,6 +112,9 @@ struct rs_type_info
             resolveGenericsIn(other, generics);
     }
 };
+
+
+
 // oh lord
 template <>
 struct std::formatter<std::vector<rs_type_info>> : std::formatter<std::string> {

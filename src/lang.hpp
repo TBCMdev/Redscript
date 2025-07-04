@@ -41,7 +41,7 @@ public:
     std::string  name;
     int32_t     scope;
     rs_type_info type_info, real_type_info;
-    bool global = false; bool _const = false;
+    bool global = false; bool _const = false; bool ref = false;
 
     std::shared_ptr<rs_expression> value = nullptr;
     std::shared_ptr<rs_object> fromObject = nullptr;

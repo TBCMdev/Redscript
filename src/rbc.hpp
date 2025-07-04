@@ -206,6 +206,7 @@ struct rbc_function
     std::string getParentHashStr();
     std::string getGenericsHashStr();
     std::string toStr();
+    std::string toSignatureStr();
     std::string toHumanStr();
     rbc_function(const std::string& _name) : name(_name)
     {} 
@@ -244,6 +245,8 @@ public:
     sharedt<rs_variable> getVariable(const std::string &name);
     sharedt<rbc_register> getFreeRegister(bool operable = false);
     sharedt<rbc_register> makeRegister(bool operable = false, bool vacant = true);
+
+    std::vector<std::string> callStackStr();
 
     void operator()(std::vector<rbc_command> &instructions);
     void operator()(const rbc_command &instruction);

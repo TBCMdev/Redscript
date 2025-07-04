@@ -7,13 +7,13 @@
 #define ABORT_PARSE throw program.context
 #define COMP_ERROR(_ec, message, ...)                                    \
     {                                                                    \
-        err = rs_error(message, *content, currentToken->trace, currentFile->fileName, ##__VA_ARGS__);  \
+        err = rs_error(message, *content, currentToken->trace, std::make_shared<std::vector<std::string>>(program.callStackStr()), currentFile->fileName, ##__VA_ARGS__);  \
         err.trace.ec = _ec;                                             \
         ABORT_PARSE;                                                     \
     }
 #define COMP_ERROR_R(_ec, message, ret, ...)                             \
     {                                                                    \
-        err = rs_error(message, *content, currentToken->trace, currentFile->fileName, ##__VA_ARGS__);  \
+        err = rs_error(message, *content, currentToken->trace, std::make_shared<std::vector<std::string>>(program.callStackStr()), currentFile->fileName, ##__VA_ARGS__);  \
         err.trace.ec = _ec;                                             \
         ABORT_PARSE;                                                     \
     }
@@ -81,7 +81,7 @@ struct rbc_parser
 
     template<typename... _Infos>
     inline constexpr void nexpect(_Infos&&... chars)
-    { ( nexpect(token_type::SYMBOL, std::forward<_Infos>(chars)), ... ); }
+    { ( nexpect(std::forward<_Infos>(chars)), ... ); }
 
     
 

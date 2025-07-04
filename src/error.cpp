@@ -40,8 +40,23 @@ void printerr(rs_error& error, std::vector<std::string> notes)
     ERROR("[RS:%d] %s", error.trace.ec, error.message.c_str());
 
     for (std::string& note : notes)
-        std::cout << ERROR_NOTE_COLOR <<"  [NOTE] " << note << ERROR_RESET "\n";
+        std::cout << ERROR_NOTE_COLOR << "  [NOTE] " << note << ERROR_RESET "\n";
     
+    if (error.callTrace)
+    {
+        auto& callTrace = *error.callTrace;
+        ERROR("Stack trace: ");
+        size_t at = callTrace.size();
+        std::cout << GRAY_COLOR;
+        for(auto& funcStr : callTrace)
+        {
+            std::cout << "\t " << at << " : " << syntaxHighlight(funcStr) << '\n';
+            at --;
+        }
+
+        std::cout << ERROR_RESET;
+    }
+
     std::cout << "\n\t -- " << fileStr.str() << " -- \n";
     for(size_t i = 0; i < std::min(error.trace.line - RS_ERROR_LINE_PADDING + 1, (size_t)RS_ERROR_LINE_PADDING); i++)
         std::cout << "      |\n";

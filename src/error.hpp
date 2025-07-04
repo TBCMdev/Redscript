@@ -11,6 +11,9 @@
 #define RS_ERROR_LINE_PADDING 1
 #include "errors.hpp"
 
+
+#include "util.hpp"
+
 struct raw_trace_info
 {
     size_t at = 0, line = 0, caret = 0, nlindex = 0;
@@ -34,9 +37,11 @@ struct rs_error
     stack_trace trace;
     std::string message, line, fName;
     std::shared_ptr<std::string> content = nullptr;
+    std::shared_ptr<std::vector<std::string>> callTrace = nullptr;
+    
     template<typename... _Args>
     rs_error(const std::string& _message,
-             std::string&       _content,
+             const std::string& _content,
              stack_trace        _trace,
              std::string        _fName,
              _Args&&...         _variables) :
@@ -51,7 +56,7 @@ struct rs_error
     }
     template<typename... _Args>
     rs_error(const std::string& _message,
-            std::string&       _content,
+            const std::string&  _content,
             raw_trace_info&    _raw,
             std::string        _fName,
             _Args&&...         _variables) :
@@ -61,6 +66,40 @@ struct rs_error
                         std::make_format_args(std::forward<_Args>(_variables)...))),
                fName(_fName),
                content(std::make_shared<std::string>(_content))
+    {
+        _setLine();
+    }
+    template<typename... _Args>
+    rs_error(const std::string& _message,
+             const std::string& _content,
+             stack_trace        _trace,
+             std::shared_ptr<std::vector<std::string>> _callTrace,
+             std::string        _fName,
+             _Args&&...         _variables) :
+                    trace(_trace),
+                    message(std::vformat(
+                        std::string_view(_message),
+                        std::make_format_args(std::forward<_Args>(_variables)...))),
+                    fName(_fName),
+                    content(std::make_shared<std::string>(_content)),
+                    callTrace(_callTrace)
+    {
+        _setLine();
+    }
+    template<typename... _Args>
+    rs_error(const std::string& _message,
+             const std::string& _content,
+             raw_trace_info&    _raw,
+             std::shared_ptr<std::vector<std::string>> _callTrace,
+             std::string        _fName,
+             _Args&&...         _variables) :
+                    trace{0, std::make_shared<size_t>(_raw.at), _raw.line, _raw.caret, _raw.nlindex, _raw.start},
+                    message(std::vformat(
+                        std::string_view(_message),
+                        std::make_format_args(std::forward<_Args>(_variables)...))),
+                    fName(_fName),
+                    content(std::make_shared<std::string>(_content)),
+                    callTrace(_callTrace)
     {
         _setLine();
     }
