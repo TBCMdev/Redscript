@@ -25,8 +25,6 @@ std::shared_ptr<rs_object>   rbc_parser::inlineobjparse   ()
         rs_expression value = expreval(false, false, true);
         if (value.nonOperationalResult)
             adv();
-        if (err.trace.ec)
-            return nullptr;
 
         rs_variable var(name, program.currentScope);
         var.value = std::make_shared<rs_expression>(value);
@@ -74,8 +72,6 @@ bst_operation<token>         rbc_parser::make_bst         (bool br, bool oneNode
         case token_type::BRACKET_OPEN:
         {
             bst_operation<token> child = make_bst(true, false);
-            if (err.trace.ec)
-                return root;
 
             if (!root.assignNext(child))
                 COMP_ERROR(RS_SYNTAX_ERROR, "Missing operator.");
@@ -149,8 +145,6 @@ bst_operation<token>         rbc_parser::make_bst         (bool br, bool oneNode
                 {
                     // parse the next node only, concat root.right and new right to make more favorable node
                     bst_operation<token> right = make_bst(isBracketNode, true);
-                    if (err.trace.ec)
-                        return root;
                     right.right = root.right;
                     right.setOperation(next->info);
 
@@ -166,8 +160,6 @@ bst_operation<token>         rbc_parser::make_bst         (bool br, bool oneNode
                     newRoot.assignNext(root);
 
                     bst_operation<token> right = make_bst(isBracketNode, true);
-                    if (err.trace.ec)
-                        return root;
                     // assign right
                     newRoot.assignNext(right);
 
@@ -235,8 +227,6 @@ void                         rbc_parser::prune_expr       (bst_operation<token>&
         {
             _NodeT& lchild = std::get<_NodeT>(*expr.left);
             prune_expr(lchild);
-            if (err.trace.ec)
-                return;
             if (lchild.isSingular())
                 expr.left = std::make_shared<_NodeT::_ValueT>(std::get<token>(*lchild.left));
         }
@@ -244,8 +234,6 @@ void                         rbc_parser::prune_expr       (bst_operation<token>&
         {
             _NodeT& rchild = std::get<_NodeT>(*expr.right);
             prune_expr(rchild);
-            if (err.trace.ec)
-                return;
             if (rchild.isSingular())
                 expr.right = std::make_shared<_NodeT::_ValueT>(std::get<token>(*rchild.left));
         }
@@ -262,8 +250,6 @@ rs_expression                rbc_parser::expreval         (bool br, bool lineEnd
     {
         // parse object
         std::shared_ptr<rs_object> obj = inlineobjparse();
-        if(err.trace.ec || !obj)
-            return expr;
         expr.nonOperationalResult = std::make_shared<rbc_value>(obj);
         return expr;
     }
@@ -276,29 +262,23 @@ rs_expression                rbc_parser::expreval         (bool br, bool lineEnd
     }
     else if (current.type == token_type::SQBRACKET_OPEN)
     {
-        adv();
         expr.nonOperationalResult = std::make_shared<rbc_value>(parselist());
         return expr;
     }
     bst_operation<token> bst = make_bst(br, false, obj);
 
-    if (err.trace.ec)
-        return expr;
     if (lineEnd)
     {
         if (!resync())
             COMP_ERROR(RS_EOF_ERROR, "Missing semicolon.");
-        if (peek()->type != token_type::LINE_END)
-            COMP_ERROR(RS_EOF_ERROR, "Missing semicolon.");
         adv();
+        expect(token_type::LINE_END);
     }
     else if (!bst.isSingular())
         adv();
     if(prune)
     {
         prune_expr(bst);
-        if (err.trace.ec)
-            return expr;
     }
     expr.operation = bst;
 
@@ -307,7 +287,7 @@ rs_expression                rbc_parser::expreval         (bool br, bool lineEnd
 
 #pragma region lang
 
-bool                         rbc_parser::typeverify       (rs_type_info& t, rbc_value& val, int useCase)
+bool                         rbc_parser::typeverify       (const rs_type_info& t, rbc_value& val, int useCase)
 {
     switch(val.index())
     {
@@ -329,7 +309,7 @@ bool                         rbc_parser::typeverify       (rs_type_info& t, rbc_
                     default:
                         error = "Evaluated type of this expression is not allowed here.";
                 }
-                COMP_ERROR_R(RS_SYNTAX_ERROR, error, false, x, t.type_id);
+                COMP_ERROR_T(RS_SYNTAX_ERROR, error, *c.trace, false, x, t.type_id);
             }
             break;
         }
@@ -356,7 +336,6 @@ bool                         rbc_parser::typeverify       (rs_type_info& t, rbc_
         case 2:
         {
             rs_variable& var = *std::get<2>(val);
-
             if (!t.equals(var.type_info))
             {
                 std::string error;
@@ -404,10 +383,7 @@ bool                         rbc_parser::typeverify       (rs_type_info& t, rbc_
             {
                 auto elType = t.element_type();
                 for (std::shared_ptr<rbc_value>& item : list.values)
-                {
-                    if (!typeverify(elType, *item, RS_PARSER_LIST_ITEM_USE_CASE))
-                        return false;
-                }
+                    typeverify(elType, *item, RS_PARSER_LIST_ITEM_USE_CASE);
             }
             break;
         }
@@ -421,12 +397,31 @@ bool                         rbc_parser::resync           ()
     currentToken = &tokens->at(_At);
     return true;
 }
+token*                       rbc_parser::s_adv            (int i)
+{
+   if (_At + i >= S)
+    {
+        if (files.empty())
+            return nullptr;
+        
+        useNextFile();
+    }
+    else
+        _At += i;
+
+    currentToken = &tokens->at(_At);
+
+    // stack trace needs to be updated here,
+    // i.e all tokens should contain a stack trace within them.
+
+    return currentToken; 
+}
 token*                       rbc_parser::adv              (int i)
 {
     if (_At + i >= S)
     {
         if (files.empty())
-            ABORT_PARSE;
+            COMP_ERROR(RS_EOF_ERROR, "Unexpected EOF.");
         
         useNextFile();
     }
@@ -460,6 +455,17 @@ bool                         rbc_parser::match             (token_type tt, int i
         if(info > -1 && next->info != info) return false;
 
         adv();
+        return true;
+    }
+
+    return false;
+};
+bool                         rbc_parser::equals            (token_type tt, int info)
+{
+    if(currentToken && currentToken->type == tt)
+    {
+        if(info > -1 && currentToken->info != info) return false;
+
         return true;
     }
 
@@ -520,20 +526,15 @@ void                         rbc_parser::nexpect            (token_type tt, int 
     if (info == -1 && currentToken->info == info)
     {
         std::string s = tutil::type_to_str_full(tt);
-        COMP_ERROR(RS_SYNTAX_ERROR, "Unexpected specific token of type {} (id: {})", s, info);
+        COMP_ERROR(RS_SYNTAX_ERROR, "Unexpected specific token of type {} (id: {:c})", s, info);
     }
 }
-void                         rbc_parser::nexpect            (char info, token_type tt)
+void                         rbc_parser::nexpect            (char info)
 {
-    if (currentToken->type == tt)
-    {
-        std::string s = tutil::type_to_str_full(tt);
-        COMP_ERROR(RS_SYNTAX_ERROR, "Unexpected token of type {}.", s);
-    }
     if (info == -1 && currentToken->info == info)
     {
-        std::string s = tutil::type_to_str_full(tt);
-        COMP_ERROR(RS_SYNTAX_ERROR, "Unexpected specific token of type {} (id: {})", s, info);
+        std::string s = tutil::type_to_str_full(currentToken->type);
+        COMP_ERROR(RS_SYNTAX_ERROR, "Unexpected specific token of type {} (id: {:c})", s, info);
     }
 }
 token*                       rbc_parser::follows           (token_type tt, int info)
@@ -542,8 +543,7 @@ token*                       rbc_parser::follows           (token_type tt, int i
     if(next && next->type == tt)
     {
         if(info > -1 && next->info != info) return nullptr;
-        currentToken = next;
-        _At++;
+        adv();
         return next;
     }
     return nullptr;
@@ -551,24 +551,19 @@ token*                       rbc_parser::follows           (token_type tt, int i
 std::shared_ptr<rs_list>     rbc_parser::parselist        ()
 {
     rs_list list;
-    // just for error
-    token& at = *currentToken;
-
     do
     {
+        adv();
         rs_expression expr = expreval(false, false);
-        if (err.trace.ec)
-            return nullptr;
-        rs_expression::_ResultT val = expr.rbc_evaluate(program, &err);
-        if (err.trace.ec)
-            return nullptr;
+        rs_expression::_ResultT val = expr.rbc_evaluate(program);
 
+        if (val.index() == 4) // a list which was parsed fine, so we are at a different ']'
+            adv();
         list.values.push_back(std::make_shared<rbc_value>(val));
-        at = *currentToken;
-    } while (adv() && at.type == token_type::SYMBOL && at.info == ',');
+    } while (equals(token_type::SYMBOL, ','));
 
-    if (at.type != token_type::SQBRACKET_CLOSED)
-        COMP_ERROR(RS_SYNTAX_ERROR, "Unclosed square bracket.");
+    expect(token_type::SQBRACKET_CLOSED);
+    
 
     return std::make_shared<rs_list>(list);
 }
@@ -639,12 +634,12 @@ _after_type:
         arrayCount++;
         std::pair<bool, bool> flag;
         
-        if(!match(token_type::SQBRACKET_CLOSED))
+        if(!follows(token_type::SQBRACKET_CLOSED))
             COMP_ERROR_R(RS_SYNTAX_ERROR, "Unclosed type specified array.", tinfo);
 
-        if (match(token_type::SYMBOL, '?'))
+        if (follows(token_type::SYMBOL, '?'))
             flag.first = true;
-        if (match(token_type::SYMBOL, '!'))
+        if (follows(token_type::SYMBOL, '!'))
             flag.second = true;
 
         arrayFlags.push_back(flag);
@@ -707,6 +702,7 @@ void                          rbc_parser::useNextFile            ()
 {
     if (files.empty()) return;
     currentFile = files.front();
+    program.currentFragment = currentFile;
     files.pop_front();
 
     tokens = &currentFile->tokens;
@@ -849,18 +845,13 @@ bool                         rbc_parser::callparse        (std::string& name,
             resync(); // reassign current
             if (expr.nonOperationalResult)
                 adv(); // object parsing finishes at }, not: ,
-            if(err.trace.ec)
-                return false;
-            auto result = expr.rbc_evaluate(program, &err);
-            if(err.trace.ec)
-                return false;
+            auto result = expr.rbc_evaluate(program);
 
             rs_variable* param = function->getNthParameter(pc);
             if (!param)
                 COMP_ERROR_R(RS_SYNTAX_ERROR, "No matching function call with pc of {}", false, pc);
 
-            if (!typeverify(param->type_info, result, RS_PARSER_PARAMETER_USE_CASE))
-                ABORT_PARSE;
+            typeverify(param->type_info, result, RS_PARSER_PARAMETER_USE_CASE);
 
             rbc_command c(rbc_instruction::PUSH,
                     rbc_constant(token_type::STRING_LITERAL, function->name),
@@ -893,7 +884,7 @@ bool                         rbc_parser::callparse        (std::string& name,
     // a function with a parent or a function with generics cannot be found by the 
     // transpiler without info, so we directly pass the pointer of the function to the asm->mcfunction compiler.
     if (!function->parent && !function->generics)
-        c.parameters.push_back(std::make_shared<rbc_value>(rbc_constant(token_type::STRING_LITERAL, name, &start->trace)));
+        c.parameters.push_back(std::make_shared<rbc_value>(rbc_constant(token_type::STRING_LITERAL, name, std::make_shared<raw_trace_info>(start->trace))));
     else
     {
         // pass mem addr of function to instruction as its a child function or generic function
@@ -937,9 +928,6 @@ std::shared_ptr<rs_variable> rbc_parser::varparse         (token& name, bool nee
     else
     {
         rs_type_info type = typeparse();
-
-        if(err.trace.ec)
-            return nullptr;
 
         variable = std::make_shared<rs_variable>(name, program.currentScope, !program.currentFunction);
         variable->type_info = type;
@@ -992,8 +980,6 @@ _skip_type:
             break;
         }
         rs_expression expr = expreval();
-        if(err.trace.ec)
-            return nullptr;
         variable->value = std::make_shared<rs_expression>(expr);
         // we dont want to create variables defined in an object. We handle that another way.
         if (expr.operation.isSingular() && !obj && !expr.nonOperationalResult)
@@ -1009,7 +995,7 @@ _skip_type:
             else if (!variable->type_info.equals(value.info))
                 COMP_ERROR_R(RS_SYNTAX_ERROR, "Cannot assign constant of type {} to variable of type {}.", nullptr, value.info, variable->type_info.type_id);
             
-            rbc_value val = value.type == token_type::WORD ? program.getVariable(value.repr) : rbc_value(rbc_constant(value.type, value.repr, &value.trace));
+            rbc_value val = value.type == token_type::WORD ? program.getVariable(value.repr) : rbc_value(rbc_constant(value.type, value.repr, std::make_shared<raw_trace_info>(value.trace)));
             // no need to evaluate.
             if (needsCreation)
                 program(rbc_commands::variables::create(variable, val));
@@ -1018,7 +1004,9 @@ _skip_type:
         }
         else if (!obj)
         {
-            rbc_value result = expr.rbc_evaluate(program, &err);
+           
+
+            rbc_value result = expr.rbc_evaluate(program);
 
             // list
             if (result.index() == 4)
@@ -1027,16 +1015,14 @@ _skip_type:
                     COMP_ERROR(RS_SYNTAX_ERROR, "Cannot assign list-instance to a non-list typed variable.");
             }
 
-            if(err.trace.ec)
-                return nullptr;
-
-            if(!typeverify(variable->type_info, result, RS_PARSER_VARIABLE_USE_CASE))
-                return nullptr;
+            typeverify(variable->type_info, result, RS_PARSER_VARIABLE_USE_CASE);
 
             if (needsCreation)
                 program(rbc_commands::variables::create(variable, result));
             else
                 program(rbc_commands::variables::set(variable, result));
+            // singular expressions need to adv
+            adv();
         }
         break;
     }
@@ -1132,8 +1118,6 @@ std::shared_ptr<rs_object>   rbc_parser::objparse         (std::string& name)
         }
         adv();
         auto variable = varparse(*name, true, false, true);
-        if(err.trace.ec)
-            return nullptr;
         if (obj.members.find(variable->name) != obj.members.end())
             COMP_ERROR_R(RS_SYNTAX_ERROR, "Duplicate object member name.", nullptr);
 
@@ -1280,8 +1264,6 @@ void                         rbc_parser::parseCurrent     ()
         }
         // we are defining the return type
         retType = typeparse();
-        if (err.trace.ec)
-            ABORT_PARSE;
         if(retType.equals(RS_NULL_KW_ID))
             COMP_ERROR(RS_SYNTAX_ERROR, "A functions' return type cannot be marked as null, use 'void' instead.");            
         
@@ -1370,6 +1352,7 @@ void                         rbc_parser::parseCurrent     ()
         {
             case token_type::CBRACKET_OPEN:
             {
+                program._debug_infuncbody = true;
                 // break, hand over parsing to main loop, scope is incremented earlier for parameters. it will decrement when it reaches
                 // a closing curly brace.
                 if (generics)
@@ -1437,7 +1420,7 @@ void                         rbc_parser::parseCurrent     ()
 
                 // TODO: should functions have global scope access? if so, we need to keep track of when they are created.
                 // I think not.
-
+                program._debug_infuncbody = false;
                 if (program.currentFunction->generics)
                 {
                     for(auto& generic : program.currentFunction->generics->entries)
@@ -1527,11 +1510,7 @@ void                         rbc_parser::parseCurrent     ()
         else
         {
             rs_expression expr = expreval();
-            if(err.trace.ec)
-                ABORT_PARSE;
-            rbc_value result = expr.rbc_evaluate(program, &err); // evaluate and compute return statement
-            if(err.trace.ec)
-                ABORT_PARSE;
+            rbc_value result = expr.rbc_evaluate(program); // evaluate and compute return statement
             if (!typeverify(*program.currentFunction->returnType, result, RS_PARSER_RETURN_USE_CASE))
                 ABORT_PARSE;
             program(rbc_command(rbc_instruction::RET, result));
@@ -1548,11 +1527,7 @@ void                         rbc_parser::parseCurrent     ()
         adv();
         // br = true as if we hit the closing bracket of the if statement we should return.
         rs_expression left = expreval(true, false, false);
-        if(err.trace.ec)
-            ABORT_PARSE;
-        rbc_value lVal = left.rbc_evaluate(program, &err);
-        if(err.trace.ec)
-            ABORT_PARSE;
+        rbc_value lVal = left.rbc_evaluate(program);
         
         resync();
 
@@ -1579,12 +1554,8 @@ void                         rbc_parser::parseCurrent     ()
         // prune = false as expreval has mismatching problems after when encountering this ).
         // horrible code having 4 boolean flags, maybe make struct.
         rs_expression right = expreval(true, false, false);
-        if (err.trace.ec)
-            ABORT_PARSE;
         resync();
-        rbc_value rVal = right.rbc_evaluate(program, &err);
-        if(err.trace.ec)
-            ABORT_PARSE;
+        rbc_value rVal = right.rbc_evaluate(program);
         token_type t = currentToken->type;
 
         switch(t)
@@ -1599,7 +1570,7 @@ void                         rbc_parser::parseCurrent     ()
                 COMP_ERROR(RS_SYNTAX_ERROR, "Unexpected token.");
 
         }
-        program(rbc_command(flags.parsingelif ? rbc_instruction::ELIF : rbc_instruction::IF, lVal, rbc_constant(compop, op.repr, &op.trace), rVal));
+        program(rbc_command(flags.parsingelif ? rbc_instruction::ELIF : rbc_instruction::IF, lVal, rbc_constant(compop, op.repr, std::make_shared<raw_trace_info>(op.trace)), rVal));
         
         goto end_if_parse;
     }
@@ -1644,8 +1615,6 @@ void                         rbc_parser::parseCurrent     ()
                 adv();
 
                 auto obj = objparse(name);
-                if (err.trace.ec)
-                    ABORT_PARSE;
                 obj->typeID = rs_object::TYPE_CARET_START + program.objectTypes.size();
                 program.objectTypes.insert({name, obj});
                 break;

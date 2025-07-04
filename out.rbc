@@ -1,7 +1,4 @@
-x:
-kill:
-msg:
-CREATE {{iarray, 0, 0, 6}, name=iarray, scope=0, typeinf=1[1], (g=1, c=0)}, 
-PUSH (const){T=2, v=x}, (const){T=2, v=p}, {{iarray, 0, 0, 6}, name=iarray, scope=0, typeinf=1[1], (g=1, c=0)}
-CALL 
-POP 
+y:
+	CREATE {{z, 0, 0, 5}, name=z, scope=1, typeinf=unknown, (g=0, c=0)}, (const){T=6, v=p}
+	CREATE {{test, 0, 0, 8}, name=test, scope=1, typeinf=int, (g=0, c=0)}, (const){T=1, v=56}
+	CREATE {{x, 0, 0, 5}, name=x, scope=1, typeinf=int[][][2], (g=0, c=0)}, 

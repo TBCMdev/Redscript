@@ -199,6 +199,8 @@ std::string rbc_function::toSignatureStr()
             stream << "ref ";
         stream << at.name << ": " << at.type_info.tostr() + ((i != S - 1) ? ", " : ")");
     }
+    if (S == 0)
+        stream << ')';
     return stream.str();
 }
 std::string rbc_command::tostr()
@@ -368,7 +370,7 @@ std::vector<std::string> rbc_program::callStackStr()
     for (auto& func : functionStack)
         x.push_back(func->toSignatureStr());
 
-    if (currentFunction)
+    if (currentFunction && _debug_infuncbody)
         x.push_back(currentFunction->toSignatureStr());
 
     return x;
@@ -1390,6 +1392,22 @@ namespace conversion
         var.comp_info.varIndex = context.varStackCount++;
         return THIS;
     }
+    constexpr std::string CommandFactory::getTypedNullConstant   (const rs_type_info& t)
+    {
+        if (t.array_count > 0)
+            return "[]";
+        switch (t.type_id)
+        {
+            case RS_STRING_KW_ID:
+                return "\"\"";
+            case RS_FLOAT_KW_ID:
+                return "0F";
+            case RS_BOOL_KW_ID:
+                return "false";
+            default:
+                return "0";
+        }
+    }
     CommandFactory::_This CommandFactory::createVariable   (rs_variable& var, rbc_value& val)
     {
         switch(val.index())
@@ -1436,64 +1454,83 @@ namespace conversion
                 //  0, 1, 2, 3
                 // v = [4, x, 4, y]
 
-                rs_list& l = *std::get<4>(val);
-
+                rs_list& list = *std::get<4>(val);
                 std::stringstream listInitStr;
-                listInitStr << '[';
-
-                std::vector<uint32_t> uninitialized;
                 std::vector<mc_command> initCommands;
-                for(auto& value : l.values)
+
+                std::function<void(const rs_list&, std::stringstream&)> parseList;
+                
+                parseList = [&](const rs_list& l, std::stringstream& stream)
                 {
-                    switch(value->index())
+
+                    listInitStr << '[';
+
+                    std::vector<uint32_t> uninitialized;
+                    for(auto& value : l.values)
                     {
-                        case 0:
+                        switch(value->index())
                         {
-                            rbc_constant& c = std::get<0>(*value);
-                            c.quoteIfStr();
-
-                            listInitStr << c.val << ',';
-
-                            break;
-                        }
-                        case 1:
-                        {
-                            rbc_register& reg = *std::get<1>(*value);
-                            
-                            if(reg.operable)
+                            case 0:
                             {
+                                rbc_constant& c = std::get<0>(*value);
+                                c.quoteIfStr();
+
+                                listInitStr << c.val;
+
+                                break;
+                            }
+                            case 1:
+                            {
+                                rbc_register& reg = *std::get<1>(*value);
+                                
+                                if(reg.operable)
+                                {
+                                    mc_command assign(false, MC_DATA_CMD_ID, MC_DATA(modify storage, MC_VARIABLE_VALUE(var.comp_info.varIndex))
+                                                            PAD(append from score) MC_OPERABLE_REG(INS_L(STR(reg.id)))
+                                                    );
+                                    initCommands.push_back(assign);
+                                }
+                                else
+                                {
+                                    // TODO FIX
+                                    mc_command assign(false, MC_DATA_CMD_ID, MC_DATA(modify storage, MC_VARIABLE_VALUE(var.comp_info.varIndex))
+                                                            PAD(append from storage) MC_NOPERABLE_REG(reg.id)
+                                                );
+                                    initCommands.push_back(assign);
+                                }
+                                
+                                listInitStr << '0';
+                                // TODO fix non operable registers here, 0 might not be the null constant suitable
+                                break;
+                            }
+                            case 2:
+                            {
+                                // insert null, and append (move code to below).
+                                rs_variable& v = *std::get<2>(*value);
+
                                 mc_command assign(false, MC_DATA_CMD_ID, MC_DATA(modify storage, MC_VARIABLE_VALUE(var.comp_info.varIndex))
-                                                        PAD(append from score) MC_OPERABLE_REG(INS_L(STR(reg.id)))
+                                                            PAD(append from storage) MC_VARIABLE_VALUE_FULL(v.comp_info.varIndex)
                                                 );
                                 initCommands.push_back(assign);
+                                listInitStr << CommandFactory::getTypedNullConstant(v.type_info);
 
+                                break;
                             }
-                            else
+                            case 4:
                             {
-                                // TODO FIX
-                                mc_command assign(false, MC_DATA_CMD_ID, MC_DATA(modify storage, MC_VARIABLE_VALUE(var.comp_info.varIndex))
-                                                        PAD(append from storage) MC_NOPERABLE_REG(reg.id)
-                                            );
-                                initCommands.push_back(assign);
+                                rs_list& child = *std::get<4>(*value);
+                                parseList(child, stream);
+                                break;
                             }
-                            break;
                         }
-                        case 2:
-                        {
-                            // insert 0, and append (move code to below).
-                            rs_variable& v = *std::get<2>(*value);
-
-                            mc_command assign(false, MC_DATA_CMD_ID, MC_DATA(modify storage, MC_VARIABLE_VALUE(var.comp_info.varIndex))
-                                                        PAD(append from storage) MC_VARIABLE_VALUE_FULL(v.comp_info.varIndex)
-                                            );
-                            initCommands.push_back(assign);
-                            break;
-                        }
+                        listInitStr << ',';
                     }
-                }
-                listInitStr.seekp(-1, std::ios_base::end);
-                listInitStr << ']';
+                    listInitStr.seekp(-1, std::ios_base::end);
+                    listInitStr << ']';
+                };
 
+                parseList(list, listInitStr);
+                
                 create_and_push(MC_DATA_CMD_ID,
                     MC_DATA(modify storage, RS_PROGRAM_VARIABLES)
                         PAD(append value)

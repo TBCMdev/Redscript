@@ -22,10 +22,46 @@ struct rs_type_info
     //              arrOptional, arrStrict
 
     std::vector<std::pair<bool, bool>> arrayFlags;
+    inline std::string full_type_name() const
+    {
+        std::string ret = type_name();
+        if (optional)
+            ret.push_back('?');
+        if (strict)
+            ret.push_back('!');
 
+        for(uint32_t i = 0; i < array_count; i++)
+        {
+            ret += "[]";
+            auto& flag = arrayFlags.at(i);
+            if (flag.first)
+                ret.push_back('?');
+            if (flag.second)
+                ret.push_back('!');
+        }
+        return ret;
+    }
+    inline std::string type_name() const
+    {
+        switch(type_id)
+        {
+            case RS_INT_KW_ID:
+                return "int";
+            case RS_STRING_KW_ID:
+                return "string";
+            case RS_FLOAT_KW_ID:
+                return "float";
+            case RS_BOOL_KW_ID:
+                return "bool";
+            case RS_OBJECT_KW_ID:
+                return "object";
+            default:
+                return "unknown";
+        }
+    }
     inline std::string tostr() const
     {
-        std::string typestr = std::to_string(type_id);
+        std::string typestr = full_type_name();
         if (strict)   typestr.push_back('!');
 
         for(size_t i = 0; i < otherTypes.size(); i++)
@@ -42,7 +78,13 @@ struct rs_type_info
     {
         if (array_count < 1) return *this;
 
-        return rs_type_info{type_id, array_count - 1, optional, strict, generic, generic_id, otherTypes, arrayFlags};
+        auto arrIndInf = arrayFlags.back();
+        auto flagsCopy = arrayFlags;
+        
+        if (flagsCopy.size() > 0)
+            flagsCopy.pop_back();
+
+        return rs_type_info{type_id, array_count - 1, arrIndInf.first, arrIndInf.second, generic, generic_id, otherTypes, flagsCopy};
     }
     inline bool compareArrayFlags(const rs_type_info& other) const
     {
@@ -64,7 +106,7 @@ struct rs_type_info
         const bool aeq = array_count == other.array_count && compareArrayFlags(other);
 
         return ((generic && !other.generic && aeq)
-            ||  (generic_id == other.generic_id && aeq))
+            ||  (generic && generic_id == other.generic_id && aeq))
             || (optional && other.type_id == RS_NULL_KW_ID)
             || (other.type_id == type_id && aeq && other.optional == optional && other.strict == strict)
             || canConvertTo(other);

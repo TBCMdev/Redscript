@@ -17,6 +17,12 @@
         err.trace.ec = _ec;                                             \
         ABORT_PARSE;                                                     \
     }
+#define COMP_ERROR_T(_ec, message, _trace, ...)                             \
+    {                                                                    \
+        err = rs_error(message, *content, _trace, std::make_shared<std::vector<std::string>>(program.callStackStr()), currentFile->fileName, ##__VA_ARGS__);  \
+        err.trace.ec = _ec;                                             \
+        ABORT_PARSE;                                                     \
+    }
 
 struct rbc_parser_flags
 {
@@ -64,16 +70,17 @@ struct rbc_parser
 
     bool   resync  ();
     bool   match   (token_type tt, int info = -1);
+    bool   equals  (token_type tt, int info = -1);
     token* adv     (int i = 1);
+    token* s_adv   (int i = 1);
     token* peek    (int x = 1);
     token* follows (token_type tt, int info = -1);
-
     void expect    (token_type tt, std::string msg, int info = -1);
     void expect    (token_type tt, int info = -1);
     void expect    (char info, token_type tt = token_type::SYMBOL);
 
     void nexpect   (token_type tt, int info = -1);
-    void nexpect   (char info = 0, token_type tt = token_type::SYMBOL);
+    void nexpect   (char info);
 
     template<typename... _Infos>
     void expect_any (_Infos&&... chars);
@@ -91,7 +98,7 @@ struct rbc_parser
     #define RS_PARSER_PARAMETER_USE_CASE 3
     // verifies t == val or t can convert to val, throws an error otherwise
     // use case is used to give accurate descriptions to the errors.
-    bool         typeverify    (rs_type_info& t, rbc_value& val, int useCase);
+    bool         typeverify    (const rs_type_info& t, rbc_value& val, int useCase);
     // parses a type
     rs_type_info typeparse     ();
     

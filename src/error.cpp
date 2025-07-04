@@ -1,12 +1,11 @@
 #include "error.hpp"
 #include "constants.hpp"
 #include "token.hpp"
-std::string syntaxHighlight(const std::string& s)
+std::string syntaxHighlight(const std::string& s, const std::string color)
 {
     static const std::unordered_map<std::string, std::tuple<token_type, uint32_t>> KEYWORDS = RS_LANG_KEYWORDS;
     static const std::string HIGHLIGHT_COLOR_STR = KEYWORD_HIGHLIGHT_COLOR;
     static const std::string HIGHLIGHT_TYPE_COLOR_STR = TYPE_HIGHLIGHT_COLOR;
-    static const std::string ERROR_RESET_COLOR_STR = ERROR_RESET;
 
     std::string result = s;
 
@@ -25,8 +24,8 @@ std::string syntaxHighlight(const std::string& s)
             }
             result.replace(at, S,
                 (std::get<0>(keyword.second) == token_type::TYPE_DEF ? HIGHLIGHT_TYPE_COLOR_STR : HIGHLIGHT_COLOR_STR)
-                + word + ERROR_RESET_COLOR_STR);
-            at += HIGHLIGHT_COLOR_STR.size() + S + ERROR_RESET_COLOR_STR.size(); // move past inserted text
+                + word + color);
+            at += HIGHLIGHT_COLOR_STR.size() + S + color.size(); // move past inserted text
         }
     }
 
@@ -42,7 +41,7 @@ void printerr(rs_error& error, std::vector<std::string> notes)
     for (std::string& note : notes)
         std::cout << ERROR_NOTE_COLOR << "  [NOTE] " << note << ERROR_RESET "\n";
     
-    if (error.callTrace)
+    if (error.callTrace && error.callTrace->size() > 0)
     {
         auto& callTrace = *error.callTrace;
         ERROR("Stack trace: ");
@@ -50,7 +49,7 @@ void printerr(rs_error& error, std::vector<std::string> notes)
         std::cout << GRAY_COLOR;
         for(auto& funcStr : callTrace)
         {
-            std::cout << "\t " << at << " : " << syntaxHighlight(funcStr) << '\n';
+            std::cout << "\t " << at << " : " << syntaxHighlight(funcStr, GRAY_COLOR) << '\n';
             at --;
         }
 

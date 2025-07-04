@@ -27,7 +27,7 @@ struct rs_expression
     bst_operation<token> operation;
     std::shared_ptr<_ResultT> nonOperationalResult = nullptr;
     
-    _ResultT rbc_evaluate(rbc_program&, rs_error*,
+    _ResultT rbc_evaluate(rbc_program&,
                                bst_operation<token>* = nullptr);
 };
 struct rs_compilation_info

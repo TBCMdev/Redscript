@@ -1,10 +1,10 @@
 #include "lang.hpp"
 #include "rbc.hpp"
-#define EXPR_ERROR_R(_ec, _message, _trace, _ret, ...)                                                       \
-    {                                                                                                        \
-        *err = rs_error(_message, *program.context->content, _trace, program.context->fName, ##__VA_ARGS__); \
-        err->trace.ec = _ec;                                                                                 \
-        return _ret;                                                                                         \
+#define EXPR_ERROR_R(_ec, _message, _trace, ret, ...)                             \
+    {                                                                    \
+        program.context = new rs_error(_message, program.currentFragment->fileContent, _trace, std::make_shared<std::vector<std::string>>(program.callStackStr()), program.currentFragment->fileName, ##__VA_ARGS__);  \
+        program.context->trace.ec = _ec;                                             \
+        throw program.context;                                                     \
     }
 #pragma region objects
 
@@ -12,15 +12,13 @@
 #pragma endregion objects
 #pragma region expressions
 
-rs_expression::_ResultT rs_expression::rbc_evaluate(rbc_program& program, rs_error* err,
-                                          bst_operation<token>* node)
+rs_expression::_ResultT rs_expression::rbc_evaluate(rbc_program& program, bst_operation<token>* node)
 {
     using _NodeT  = bst_operation<token>;
     using _ValueT = rbc_value;
 
     if (nonOperationalResult)
         return *nonOperationalResult;
-
     if (!node) node = &operation;
 
     const bool leftIsToken  = node->left->index();
@@ -37,9 +35,7 @@ rs_expression::_ResultT rs_expression::rbc_evaluate(rbc_program& program, rs_err
 
     if (!leftIsToken)
     {
-        auto lresult = rbc_evaluate(program, err, &std::get<_NodeT>(*node->left));
-        if (err->trace.ec)
-            return lresult;
+        auto lresult = rbc_evaluate(program, &std::get<_NodeT>(*node->left));
         if (lresult.index())
             leftVal = std::make_shared<_ValueT>(std::get<1>(lresult));
         else
@@ -55,7 +51,8 @@ rs_expression::_ResultT rs_expression::rbc_evaluate(rbc_program& program, rs_err
         if ((var = program.getVariable(value)))
             leftVal = std::make_shared<_ValueT>(var);
         else
-            leftVal = std::make_shared<_ValueT>(rbc_constant(value.type, value.repr, &value.trace));
+            leftVal = std::make_shared<_ValueT>(rbc_constant(value.type, value.repr,
+                                                             std::make_shared<raw_trace_info>(value.trace)));
     }
 
     if(!node->right)
@@ -63,9 +60,7 @@ rs_expression::_ResultT rs_expression::rbc_evaluate(rbc_program& program, rs_err
 
     if (!rightIsToken)
     {
-        auto rresult = rbc_evaluate(program, err, &std::get<_NodeT>(*node->right));
-        if (err->trace.ec)
-            return *leftVal;
+        auto rresult = rbc_evaluate(program, &std::get<_NodeT>(*node->right));
         if(rresult.index() != 1)
             rightVal = std::make_shared<_ValueT>(rresult);
         else
@@ -85,7 +80,7 @@ rs_expression::_ResultT rs_expression::rbc_evaluate(rbc_program& program, rs_err
         if ((var = program.getVariable(value)))
             rightVal = std::make_shared<_ValueT>(var);
         else
-            rightVal = std::make_shared<_ValueT>(rbc_constant(value.type, value.repr, &value.trace));
+            rightVal = std::make_shared<_ValueT>(rbc_constant(value.type, value.repr, std::make_shared<raw_trace_info>(value.trace)));
     }
     sharedt<rbc_register> reg = nullptr;
     bool occupy = true;

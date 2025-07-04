@@ -114,7 +114,7 @@ int main(int argc, char* const* argv)
         do
         {
             parser.parseCurrent();
-        } while (parser.adv());
+        } while (parser.s_adv());
     } catch(rs_error* err)
     {
         // todo these notes need to be seperated to help the user with errors. First of many!

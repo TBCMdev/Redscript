@@ -121,5 +121,5 @@ private:
     }
 };
 
-std::string syntaxHighlight(const std::string& s);
+std::string syntaxHighlight(const std::string& s, const std::string col = ERROR_RESET);
 void printerr(rs_error&, std::vector<std::string> = {});

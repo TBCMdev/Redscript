@@ -101,12 +101,12 @@ public:
     }
     const token_type val_type;
     std::string val;
-    raw_trace_info *trace = nullptr;
+    std::shared_ptr<raw_trace_info> trace = nullptr;
     rbc_constant(token_type _val_type, std::string _val)
         : val_type(_val_type), val(_val)
     {
     }
-    rbc_constant(token_type _val_type, std::string _val, raw_trace_info *_trace)
+    rbc_constant(token_type _val_type, std::string _val, std::shared_ptr<raw_trace_info> _trace)
         : val_type(_val_type), val(_val), trace(_trace)
     {
     }
@@ -227,10 +227,14 @@ struct rbc_program
     int32_t currentScope = 0;
     std::stack<rbc_scope_type> scopeStack;
     raw_rbc_function globalFunction;
+
+    std::shared_ptr<project_fragment> currentFragment = nullptr;
+
     rbc_scope_type lastScope;
     std::shared_ptr<rs_module> currentModule = nullptr;
     std::shared_ptr<rbc_function> currentFunction = nullptr;
     iterable_stack<std::shared_ptr<rbc_function>> functionStack;
+    bool                                          _debug_infuncbody = false;
     iterable_stack<std::shared_ptr<rs_module>> moduleStack;
     std::vector<std::shared_ptr<rs_variable>> globalVariables;
     std::vector<std::shared_ptr<rbc_register>> registers;
@@ -398,6 +402,7 @@ namespace conversion
         static mc_command makeAppendStorage(const std::string &dest, const std::string &_const);
 
         static mc_command getStackValue(long index);
+        constexpr static std::string getTypedNullConstant(const rs_type_info& t);
         _This setRegisterValue(rbc_register &reg, rbc_value &c);
         _This setVariableValue(rs_variable &var, rbc_value &val);
     };
