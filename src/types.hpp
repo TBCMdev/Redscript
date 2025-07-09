@@ -1,109 +1,126 @@
 #pragma once
-#include <cstdint>
 #include <string>
-#include <variant>
-#include <unordered_map>
+#include <cstdint>
 
-#include "globals.hpp"
-#include "constants.hpp"
-#include "bst.hpp"
 #include "token.hpp"
-#include "type_info.hpp"
+#include "rs_types.hpp"
 
-struct rbc_program;
-struct rs_object;
+#define RBC_CONST_INT_ID 0
+#define RBC_CONST_STR_ID 1
+#define RBC_CONST_FLOAT_ID 2
+#define RBC_CONST_LIST_ID 3
 
-template <typename _T>
-using                sharedt = std::shared_ptr<_T>;
-
-typedef RBC_VALUE_T  rbc_value;
-typedef unsigned int uint;
-
-// holds a bst for pruning and computing,
-// or a shared ptr to a raw non operational result such as an object.
-// this ptr is not given a value to singleton expressions, such as integers or strings.
-// only to values that cannot be operated on.
-struct rs_expression
+struct project_fragment
 {
-    using _ResultT = rbc_value;
-    bst_operation<token> operation;
-    std::shared_ptr<_ResultT> nonOperationalResult = nullptr;
-    
-    _ResultT rbc_evaluate(rbc_program&,
-                               bst_operation<token>* = nullptr);
+    std::string fileName;
+    std::string fileContent;
+
+    token_list tokens;
 };
-struct rs_compilation_info
+enum class rbc_instruction
 {
-    int varIndex = 0;
+    CREATE,
+    CALL,
+    SAVE,
+    MATH,
+    DEL,
+    EQ,
+    NEQ,
+    GT,
+    LT,
+
+    IF,
+    NIF,
+    ENDIF,
+    ELSE,
+    ELIF,
+    NELIF,
+
+    RET,
+    SAVERET,
+    PUSH,
+    POP,
+    INC, // inc scope
+    DEC  // dec scope
 };
-class rs_variable
+enum class rbc_scope_type
+{
+    IF,
+    ELIF,
+    ELSE,
+    FUNCTION,
+    MODULE,
+    NONE
+};
+enum class rbc_value_type
+{
+    CONSTANT,
+    NBT,
+    OREG,
+    N_OREG,
+    OBJECT
+};
+enum class rbc_function_decorator
+{
+    EXTERN, // inbuilt functions
+    SINGLE, // functions with 1 single call, redundant to compile.
+    CPP,
+    NOCOMPILE,
+    NORETURN,
+    WRAPPER,
+    UNKNOWN
+};
+class rbc_register
 {
 public:
-    token&       from;
-    std::string  name;
-    int32_t     scope;
-    rs_type_info type_info, real_type_info;
-    bool global = false; bool _const = false; bool ref = false;
+    uint32_t id;
+    bool operable;
+    bool vacant = true;
 
-    std::shared_ptr<rs_expression> value = nullptr;
-    std::shared_ptr<rs_object> fromObject = nullptr;
-
-    rs_compilation_info comp_info;
-
-    rs_variable(token& _from, uint32_t _scope = 0, bool _global = false)
-        : from(_from), name(_from.repr), scope(_scope), global(_global)
-    {}
-    rs_variable(token& _from, rs_type_info realInfo, int32_t _scope = 0, bool _global = false)
-        : from(_from), name(_from.repr), scope(_scope), real_type_info(realInfo), global(_global)
-    {}
-    rs_variable(token& _from, rs_type_info explicitInfo, rs_type_info realInfo, int32_t _scope = 0, bool _global = false)
-        : from(_from), name(_from.repr), scope(_scope), type_info(explicitInfo), real_type_info(realInfo), global(_global)
-    {}
-
+    rbc_register(uint32_t _id, bool _operable, bool _vacant)
+        : id(_id), operable(_operable), vacant(_vacant)
+    {
+    }
+    inline void free()
+    {
+        vacant = true;
+    }
     inline std::string tostr()
     {
-        std::stringstream stream;
-
-        stream << '{' << from.str() << ", name=" << name << ", scope=" << scope << ", typeinf=" << type_info.tostr() << ", (g=" << global << ", c=" << _const << ")}";
-        return stream.str();
+        return "(reg){(id=" + std::to_string(id) + ") op=" + std::to_string(operable) + ", vacant=" + std::to_string(vacant) + '}';
     }
 };
-enum class rs_object_member_decorator
+class rbc_constant
 {
-    OPTIONAL,
-    REQUIRED,
-    SEPERATE,
-};
-struct rs_object
-{
-    const static uint32_t TYPE_CARET_START = 10; // custom types start at 10 and onwards for type id.
-    using _MemberT = std::pair<rs_variable, rs_object_member_decorator>;
-    // x.name -> 
-    std::string name; // empty for inline objects
-    int32_t scope;
-    // negative for inline created objects
-    int32_t typeID = -1;
-    std::unordered_map<std::string, _MemberT> members = {};
-
+public:
+    inline void quoteIfStr()
+    {
+        if (val_type == token_type::STRING_LITERAL)
+            val = '"' + val + '"';
+    }
+    inline std::string quoted()
+    {
+        return '"' + val + '"';
+    }
+    const token_type val_type;
+    std::string val;
+    std::shared_ptr<raw_trace_info> trace = nullptr;
+    rbc_constant(token_type _val_type, std::string _val)
+        : val_type(_val_type), val(_val)
+    {
+    }
+    rbc_constant(token_type _val_type, std::string _val, std::shared_ptr<raw_trace_info> _trace)
+        : val_type(_val_type), val(_val), trace(_trace)
+    {
+    }
     inline std::string tostr()
     {
-        std::stringstream stream;
-
-        stream << "(obj)" << (name.empty() ? "{inline=1" : "{name=" + name) << ", members={";
-        int i = 0;
-        for(auto& member : members)
-        {
-            if (i != 0)
-                stream << ',';
-            stream << member.second.first.name;
-            i++;
-        }
-        stream << "}}";
-        return stream.str();
+        return "(const){T=" + std::to_string(static_cast<uint32_t>(val_type)) + ", v=" + val + '}';
     }
 };
-struct rs_list
-{
-    rs_type_info elementType;
-    std::vector<std::shared_ptr<RBC_VALUE_T>> values;
-};
+
+typedef std::deque<std::shared_ptr<project_fragment>> fragment_ptr_deque;
+struct                                                rbc_function; // for impls, defined in rbc.cpp. Maybe change?
+struct                                                rbc_program;
+typedef std::pair<std::shared_ptr<rs_variable>, bool> rbc_func_var_t;
+typedef RBC_VALUE_T                                   rbc_value; // also defined in types.hpp. Remove?

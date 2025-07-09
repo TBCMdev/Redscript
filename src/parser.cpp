@@ -379,7 +379,7 @@ bool                         rbc_parser::typeverify       (const rs_type_info& t
         }
         case 2:
         {
-            constrs_variable& var = *std::get<2>(val);
+            rs_variable& var = *std::get<2>(val);
             if (!t.equals(var.type_info))
             {
                 std::string error;
@@ -1098,7 +1098,7 @@ _skip_type:
         {
             if (parameter)
                 program.currentFunction->parameters.push_back(variable);
-            program.currentFunction->localVariables.insert({variable->name, {variable, parameter}});
+            program.currentFunction->localVariables.insert({variable->name, rbc_func_var_t{variable, parameter}});
         }
     }
     return variable;

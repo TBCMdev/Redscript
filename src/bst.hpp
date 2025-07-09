@@ -3,6 +3,8 @@
 #include <memory>
 #include <variant>
 
+#include "var_access.hpp"
+
 template<typename _Storage>
 struct bst_node
 {
@@ -86,8 +88,6 @@ inline _T operator_compute(_T left, bst_operation_type op, _T right)
     }
     return left;
 }
-
-struct rs_var_access_path;
 
 template<typename _Storage>
 struct bst_operation
