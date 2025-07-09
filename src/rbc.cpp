@@ -1408,6 +1408,23 @@ namespace conversion
                 return "0";
         }
     }
+    std::string           CommandFactory::accessList       (const std::vector<size_t>& indicies)
+    {
+        std::string path = RS_PROGRAM_VARIABLES;
+        for(size_t i = 0; i < indicies.size(); i++)
+        {
+            size_t pathIndex = indicies.at(i);
+            if (i == 0)
+                path += '[' + std::to_string(pathIndex) + "].value";
+            else if (i % 2 != 0)
+                path += '[' + std::to_string(pathIndex) + ']';
+            else
+                path += "." + std::to_string(pathIndex);
+        }
+        if (indicies.size() == 1) path += ".value";
+
+        return path;
+    }
     CommandFactory::_This CommandFactory::createVariable   (rs_variable& var, rbc_value& val)
     {
         switch(val.index())
@@ -1458,16 +1475,27 @@ namespace conversion
                 std::stringstream listInitStr;
                 std::vector<mc_command> initCommands;
 
-                std::function<void(const rs_list&, std::stringstream&)> parseList;
+                std::function<void(const rs_list&, std::stringstream&, std::vector<size_t>)> parseList;
                 
-                parseList = [&](const rs_list& l, std::stringstream& stream)
+                parseList = [&](const rs_list& l, std::stringstream& stream, std::vector<size_t> indicies)
                 {
-
-                    listInitStr << '[';
+                    const bool isObject = indicies.size() % 2 == 0;
+                    auto addField = [&](size_t index, const std::string& value) -> void
+                    {
+                        if (isObject)
+                            stream << '"' << index << "\":" << value;
+                        else
+                            stream << value;
+                        stream << ',';
+                        
+                    };
+                    listInitStr << (isObject ? '{' : '[');
 
                     std::vector<uint32_t> uninitialized;
+                    size_t index = 0;
                     for(auto& value : l.values)
                     {
+                        indicies.push_back(index);
                         switch(value->index())
                         {
                             case 0:
@@ -1475,7 +1503,7 @@ namespace conversion
                                 rbc_constant& c = std::get<0>(*value);
                                 c.quoteIfStr();
 
-                                listInitStr << c.val;
+                                addField(index, c.val);
 
                                 break;
                             }
@@ -1485,7 +1513,7 @@ namespace conversion
                                 
                                 if(reg.operable)
                                 {
-                                    mc_command assign(false, MC_DATA_CMD_ID, MC_DATA(modify storage, MC_VARIABLE_VALUE(var.comp_info.varIndex))
+                                    mc_command assign(false, MC_DATA_CMD_ID, MC_DATA(modify storage, INS(accessList(indicies)))
                                                             PAD(append from score) MC_OPERABLE_REG(INS_L(STR(reg.id)))
                                                     );
                                     initCommands.push_back(assign);
@@ -1493,13 +1521,13 @@ namespace conversion
                                 else
                                 {
                                     // TODO FIX
-                                    mc_command assign(false, MC_DATA_CMD_ID, MC_DATA(modify storage, MC_VARIABLE_VALUE(var.comp_info.varIndex))
+                                    mc_command assign(false, MC_DATA_CMD_ID, MC_DATA(modify storage, INS(accessList(indicies)))
                                                             PAD(append from storage) MC_NOPERABLE_REG(reg.id)
                                                 );
                                     initCommands.push_back(assign);
                                 }
                                 
-                                listInitStr << '0';
+                                addField(index, "0");
                                 // TODO fix non operable registers here, 0 might not be the null constant suitable
                                 break;
                             }
@@ -1508,33 +1536,40 @@ namespace conversion
                                 // insert null, and append (move code to below).
                                 rs_variable& v = *std::get<2>(*value);
 
-                                mc_command assign(false, MC_DATA_CMD_ID, MC_DATA(modify storage, MC_VARIABLE_VALUE(var.comp_info.varIndex))
+                                mc_command assign(false, MC_DATA_CMD_ID, MC_DATA(modify storage, INS(accessList(indicies)))
                                                             PAD(append from storage) MC_VARIABLE_VALUE_FULL(v.comp_info.varIndex)
                                                 );
                                 initCommands.push_back(assign);
-                                listInitStr << CommandFactory::getTypedNullConstant(v.type_info);
+                                addField(index, CommandFactory::getTypedNullConstant(v.type_info));
 
                                 break;
                             }
                             case 4:
                             {
                                 rs_list& child = *std::get<4>(*value);
-                                parseList(child, stream);
+                                std::vector<size_t> indiciesCopy = indicies;
+                                parseList(child, stream, indiciesCopy);
                                 break;
                             }
                         }
-                        listInitStr << ',';
+                        indicies.pop_back();
+                        index++;
                     }
+                    
                     listInitStr.seekp(-1, std::ios_base::end);
-                    listInitStr << ']';
+                    listInitStr << (isObject ? '}' : ']');
+                    listInitStr << ',';
                 };
-
-                parseList(list, listInitStr);
                 
+                parseList(list, listInitStr, {(size_t)var.comp_info.varIndex});
+                
+                std::string f = listInitStr.str();
+                f.pop_back();
+
                 create_and_push(MC_DATA_CMD_ID,
                     MC_DATA(modify storage, RS_PROGRAM_VARIABLES)
                         PAD(append value)
-                    MC_VARIABLE_JSON_VAL(listInitStr.str(), std::to_string(var.scope),
+                    MC_VARIABLE_JSON_VAL(f, std::to_string(var.scope),
                                                 std::to_string(var.type_info.type_id))
                                 );
 

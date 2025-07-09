@@ -1,7 +1,12 @@
 #pragma once
 
 #include "token.hpp"
-#include "rbc.hpp"
+
+// types
+#include "types.hpp"
+#include "var_access.hpp"
+#include "rbc.hpp" // includes rbc_types already
+
 #include "lang.hpp"
 
 #define ABORT_PARSE throw program.context
@@ -101,6 +106,8 @@ struct rbc_parser
     bool         typeverify    (const rs_type_info& t, rbc_value& val, int useCase);
     // parses a type
     rs_type_info typeparse     ();
+    rs_var_access_path parse_var_path_access(std::shared_ptr<rs_variable>& var);
+                 
     
     bool         callparse     (std::string& name,
                                 bool needsTermination = true,

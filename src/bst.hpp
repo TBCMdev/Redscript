@@ -24,7 +24,6 @@ struct bst_node
         return ptr;
     }
 };
-
 enum class bst_operation_type
 {
     ADD,SUB,
@@ -39,30 +38,8 @@ enum class comparison_operation_type
 
     NONE
 };
-inline std::string operationTypeToStr(bst_operation_type t)
-{
-    switch(t)
-    {
-        case bst_operation_type::ADD:
-            return std::string(1, '+');
-        case bst_operation_type::SUB:
-            return std::string(1, '-');
-        case bst_operation_type::MUL:
-            return std::string(1, '*');
-        case bst_operation_type::DIV:
-            return std::string(1, '/');
-        case bst_operation_type::POW:
-            return "**";
-        case bst_operation_type::XOR:
-            return std::string(1, '^');
-        case bst_operation_type::MOD:
-            return std::string(1, '%');
-        default:
-            break;
-    }
 
-    return "NULL";
-}
+std::string operationTypeToStr(bst_operation_type t);
 inline int operatorPrecedence(bst_operation_type ot)
 {
     switch(ot)
@@ -83,26 +60,7 @@ inline int operatorPrecedence(bst_operation_type ot)
             return -1;
     }
 }
-inline int operatorPrecedence(char op)
-{
-    switch(op)
-    {
-        case '^':
-            return 0;
-        case '%':
-            return 1;
-        case '*':
-            return 2;
-        case '/':
-            return 3;
-        case '+':
-            return 4;
-        case '-':
-            return 5;
-        default:
-            return -1;
-    }
-}
+int operatorPrecedence(char op);
 template<typename _T>
 inline _T operator_compute(_T left, bst_operation_type op, _T right)
 {
@@ -128,11 +86,15 @@ inline _T operator_compute(_T left, bst_operation_type op, _T right)
     }
     return left;
 }
+
+struct rs_var_access_path;
+
 template<typename _Storage>
 struct bst_operation
 {
-
-    using _ValueT = std::variant<bst_operation<_Storage>, _Storage>;
+    // an operation can involve accessing variables such as x[1].b.a[3]
+    using _NodeT  = std::variant<_Storage, rs_var_access_path>;
+    using _ValueT = std::variant<bst_operation<_Storage>, _NodeT>;
 
     std::shared_ptr<_ValueT> left;
     std::shared_ptr<_ValueT> right;
@@ -151,6 +113,19 @@ struct bst_operation
     inline bool assignNext(_Storage& s)
     {
         // TODO FIX
+        if (right) return false;
+
+        auto val = std::make_shared<_ValueT>(s);
+
+        if(left)
+            right = std::make_shared<_ValueT>(s);
+        else
+            left = std::make_shared<_ValueT>(s);
+
+        return true;
+    }
+    inline bool assignNext(const rs_var_access_path& s)
+    {
         if (right) return false;
 
         auto val = std::make_shared<_ValueT>(s);

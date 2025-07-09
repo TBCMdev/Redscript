@@ -6,24 +6,26 @@
 
 #include "globals.hpp"
 #include "constants.hpp"
-
-struct rbc_program;
-struct rbc_register;
-struct rbc_constant;
-
-struct rs_object;
-struct rs_list;
-
 #include "bst.hpp"
 #include "token.hpp"
 #include "type_info.hpp"
+
+struct rbc_program;
+struct rs_object;
+
+template <typename _T>
+using                sharedt = std::shared_ptr<_T>;
+
+typedef RBC_VALUE_T  rbc_value;
+typedef unsigned int uint;
+
 // holds a bst for pruning and computing,
 // or a shared ptr to a raw non operational result such as an object.
 // this ptr is not given a value to singleton expressions, such as integers or strings.
 // only to values that cannot be operated on.
 struct rs_expression
 {
-    using _ResultT = RBC_VALUE_T;
+    using _ResultT = rbc_value;
     bst_operation<token> operation;
     std::shared_ptr<_ResultT> nonOperationalResult = nullptr;
     
@@ -66,20 +68,6 @@ public:
         return stream.str();
     }
 };
-struct rs_var_access_path_item
-{
-    using _Value = rbc_constant;
-    
-    _Value accessKey;
-    bool   isArray; // false means its an object
-};
-struct rs_var_access_path
-{
-    std::shared_ptr<rs_variable>         fromVar = nullptr;
-    std::vector<rs_var_access_path_item> segments = {};
-
-    std::string toPath();
-};
 enum class rs_object_member_decorator
 {
     OPTIONAL,
@@ -114,11 +102,8 @@ struct rs_object
         return stream.str();
     }
 };
-
 struct rs_list
 {
     rs_type_info elementType;
     std::vector<std::shared_ptr<RBC_VALUE_T>> values;
 };
-
-void prune_expr(rbc_program&, bst_operation<token>&, rs_error*);

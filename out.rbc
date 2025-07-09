@@ -1,4 +1,10 @@
 y:
-	CREATE {{z, 0, 0, 5}, name=z, scope=1, typeinf=unknown, (g=0, c=0)}, (const){T=6, v=p}
 	CREATE {{test, 0, 0, 8}, name=test, scope=1, typeinf=int, (g=0, c=0)}, (const){T=1, v=56}
+	SAVE (reg){(id=0) op=1, vacant=1}, {{test, 0, 0, 8}, name=test, scope=1, typeinf=int, (g=0, c=0)}
+	MATH (reg){(id=0) op=1, vacant=1}, (const){T=1, v=2}, (const){T=1, v=0}
 	CREATE {{x, 0, 0, 5}, name=x, scope=1, typeinf=int[][][2], (g=0, c=0)}, 
+msg:
+setattr:
+type:
+kill:
+getattr:

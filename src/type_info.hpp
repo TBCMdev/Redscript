@@ -155,8 +155,6 @@ struct rs_type_info
     }
 };
 
-
-
 // oh lord
 template <>
 struct std::formatter<std::vector<rs_type_info>> : std::formatter<std::string> {

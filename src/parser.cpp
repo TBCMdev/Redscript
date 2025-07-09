@@ -42,6 +42,29 @@ std::shared_ptr<rs_object>   rbc_parser::inlineobjparse   ()
     return std::make_shared<rs_object>(obj);
     
 }
+rs_var_access_path rbc_parser::parse_var_path_access(std::shared_ptr<rs_variable>& var)
+{
+    rs_var_access_path path{var};
+    while(1)
+    {
+        if (equals(token_type::SQBRACKET_OPEN))
+        {
+            adv(); // for better errors
+            if (equals(token_type::CBRACKET_CLOSED))
+                COMP_ERROR(RS_SYNTAX_ERROR, "Expected integer constant.");
+            if (!equals(token_type::INT_LITERAL))
+                COMP_ERROR(RS_SYNTAX_ERROR, "Indexing arrays can only be done with integer constants. use array::at() to access an array via variables or other.");
+            
+            path.segments.push_back(rs_var_access_path_item{rbc_constant(token_type::INT_LITERAL, currentToken->repr), true});
+        }
+        else if (equals(token_type::OBJECT_ACCESS_OPERATOR))
+        {
+            COMP_ERROR(RS_UNSUPPORTED_OPERATION_ERROR, "Object accessing has yet to be implemented.");
+        }
+        else break;
+    }
+    return path;
+}
 bst_operation<token>         rbc_parser::make_bst         (bool br, bool oneNode, bool obj)
 {
     bst_operation<token> root;
@@ -100,13 +123,26 @@ bst_operation<token>         rbc_parser::make_bst         (bool br, bool oneNode
         case token_type::OBJECT_LITERAL:
         case token_type::WORD:
         {
-
+        _parseconst:
             if (currentToken->type == token_type::WORD)
             {
-                if (!program.getVariable(currentToken->repr))
+                sharedt<rs_variable> v;
+                if (!(v = program.getVariable(currentToken->repr)))
                     COMP_ERROR(RS_SYNTAX_ERROR, "Unexpected token in expression.");
-                if (!root.assignNext(*currentToken))
-                    COMP_ERROR(RS_SYNTAX_ERROR, "Missing operator.");
+
+                if (!follows(token_type::SQBRACKET_OPEN) && !follows(token_type::OBJECT_ACCESS_OPERATOR))
+                {
+                    if (!root.assignNext(*currentToken))
+                        COMP_ERROR(RS_SYNTAX_ERROR, "Missing operator.");
+                }
+                else
+                {
+                    const rs_var_access_path path = parse_var_path_access(v);
+
+                    if(!root.assignNext(path))
+                        COMP_ERROR(RS_SYNTAX_ERROR, "Missing operator.");
+                    break;
+                }    
             }
             else if (!root.assignNext(*currentToken))
                 COMP_ERROR(RS_SYNTAX_ERROR, "Missing operator.");
@@ -182,17 +218,25 @@ bst_operation<token>         rbc_parser::make_bst         (bool br, bool oneNode
 void                         rbc_parser::prune_expr       (bst_operation<token>& expr)
 {
     using _NodeT = bst_operation<token>;
-    bool isLeftToken  = expr.left->index();
+    using _ValueT = bst_operation<token>::_NodeT;
+    bool lSingle  = expr.left->index();
     
-    bool isRightToken = expr.right ? expr.right->index() : false;
+    bool rSingle = expr.right ? expr.right->index() : false;
 
     
-    if (isLeftToken && isRightToken)
+    if (lSingle && rSingle)
     {
         // compute
-        token& left = std::get<token>(*expr.left);
-        token& right = std::get<token>(*expr.right);
+        _ValueT& lVariant = std::get<_ValueT>(*expr.left);
+        _ValueT& rVariant = std::get<_ValueT>(*expr.right);
 
+        // if one of the node values is accessing an array or object, just forget about it.
+        // (im lazy)
+        if (lVariant.index() || rVariant.index())
+            return;
+
+        token& left = std::get<token>(lVariant);
+        token& right = std::get<token>(rVariant);
         std::string result;
         if(left.type == right.type)
         {
@@ -223,19 +267,19 @@ void                         rbc_parser::prune_expr       (bst_operation<token>&
     }
     else
     {
-        if(!isLeftToken)
+        if(!lSingle)
         {
             _NodeT& lchild = std::get<_NodeT>(*expr.left);
             prune_expr(lchild);
             if (lchild.isSingular())
-                expr.left = std::make_shared<_NodeT::_ValueT>(std::get<token>(*lchild.left));
+                expr.left = std::make_shared<_NodeT::_ValueT>(std::get<_ValueT>(*lchild.left));
         }
-        if(!isRightToken && expr.right)
+        if(!rSingle && expr.right)
         {
             _NodeT& rchild = std::get<_NodeT>(*expr.right);
             prune_expr(rchild);
             if (rchild.isSingular())
-                expr.right = std::make_shared<_NodeT::_ValueT>(std::get<token>(*rchild.left));
+                expr.right = std::make_shared<_NodeT::_ValueT>(std::get<_ValueT>(*rchild.left));
         }
         if (expr.left->index() && expr.right && expr.right->index())
             prune_expr(expr);
@@ -335,7 +379,7 @@ bool                         rbc_parser::typeverify       (const rs_type_info& t
         }
         case 2:
         {
-            rs_variable& var = *std::get<2>(val);
+            constrs_variable& var = *std::get<2>(val);
             if (!t.equals(var.type_info))
             {
                 std::string error;
@@ -1306,20 +1350,29 @@ void                         rbc_parser::parseCurrent     ()
         do
         {
             adv();
+            bool _const = false;
             switch(currentToken->type)
             {
                 case token_type::BRACKET_CLOSED:
                     goto after_param;
                 case token_type::WORD:
                 {
+                _parseVar:
                     token& varName = *currentToken;
                     adv();
+
                     // false as we do not need to terminate variable usage with ; or =
-                    if (!varparse(varName, false, true)) // varparse adds any instructions to program.currentFunction
+                    if (!varparse(varName, false, true, false, _const)) // varparse adds any instructions to program.currentFunction
                         ABORT_PARSE;
                     if (currentToken->type == token_type::BRACKET_CLOSED)
                         goto after_param;
                     break;
+                }
+                case token_type::KW_CONST:
+                {
+                    _const = true;
+                    adv();
+                    goto _parseVar;
                 }
                 default:
                     COMP_ERROR(RS_SYNTAX_ERROR, "Unexpected token.");

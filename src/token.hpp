@@ -30,6 +30,7 @@ enum class token_type
     /* -- SYMBOL GROUPS -- */
     OPERATOR,
     VAR_OPERATOR,
+    OBJECT_ACCESS_OPERATOR,
     COMPARE_EQUAL,
     COMPARE_NOTEQUAL,
     MODULE_ACCESS,

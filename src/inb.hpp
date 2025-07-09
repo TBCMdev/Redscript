@@ -6,16 +6,21 @@
 
 #include "globals.hpp"
 
+// forward decls for rbc_value
 struct rbc_constant;
 struct rbc_register;
 struct rs_variable;
 struct rs_object;
 struct rs_list;
+struct rs_var_access_path;
+typedef RBC_VALUE_T rbc_value;
+
+
+
 namespace conversion
 {
     class CommandFactory;
 };
-typedef RBC_VALUE_T rbc_value;
 struct rbc_program;
 #define INB_IMPL_PARAMETERS [[maybe_unused]] rbc_program& program,                \
                             [[maybe_unused]] conversion::CommandFactory& factory, \

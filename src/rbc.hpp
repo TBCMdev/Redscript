@@ -11,134 +11,19 @@
 #include <cstdint>
 #include <deque>
 
-struct rs_variable;
-struct rs_object;
-
-typedef unsigned int uint;
-
-struct rbc_function;
-
 #include "globals.hpp"
 #include "mc.hpp"
 #include "token.hpp"
 #include "error.hpp"
 #include "util.hpp"
 #include "inb.hpp"
+
 #include "type_info.hpp"
+#include "types.hpp"
+#include "rbc_types.hpp"
 
-enum class rbc_instruction
-{
-    CREATE,
-    CALL,
-    SAVE,
-    MATH,
-    DEL,
-    EQ,
-    NEQ,
-    GT,
-    LT,
-
-    IF,
-    NIF,
-    ENDIF,
-    ELSE,
-    ELIF,
-    NELIF,
-
-    RET,
-    SAVERET,
-    PUSH,
-    POP,
-    INC, // inc scope
-    DEC  // dec scope
-};
-enum class rbc_scope_type
-{
-    IF,
-    ELIF,
-    ELSE,
-    FUNCTION,
-    MODULE,
-    NONE
-};
-
-#define RBC_CONST_INT_ID 0
-#define RBC_CONST_STR_ID 1
-#define RBC_CONST_FLOAT_ID 2
-#define RBC_CONST_LIST_ID 3
-enum class rbc_value_type
-{
-    CONSTANT,
-    NBT,
-    OREG,
-    N_OREG,
-    OBJECT
-};
-enum class rbc_function_decorator
-{
-    EXTERN, // inbuilt functions
-    SINGLE, // functions with 1 single call, redundant to compile.
-    CPP,
-    NOCOMPILE,
-    NORETURN,
-    WRAPPER,
-    UNKNOWN
-};
 
 rbc_function_decorator parseDecorator(const std::string &);
-
-class rbc_constant
-{
-public:
-    void quoteIfStr()
-    {
-        if (val_type == token_type::STRING_LITERAL)
-            val = '"' + val + '"';
-    }
-    inline std::string quoted()
-    {
-        return '"' + val + '"';
-    }
-    const token_type val_type;
-    std::string val;
-    std::shared_ptr<raw_trace_info> trace = nullptr;
-    rbc_constant(token_type _val_type, std::string _val)
-        : val_type(_val_type), val(_val)
-    {
-    }
-    rbc_constant(token_type _val_type, std::string _val, std::shared_ptr<raw_trace_info> _trace)
-        : val_type(_val_type), val(_val), trace(_trace)
-    {
-    }
-    inline std::string tostr()
-    {
-        return "(const){T=" + std::to_string(static_cast<uint>(val_type)) + ", v=" + val + '}';
-    }
-};
-class rbc_register
-{
-public:
-    uint id;
-    bool operable;
-    bool vacant = true;
-
-    rbc_register(uint _id, bool _operable, bool _vacant)
-        : id(_id), operable(_operable), vacant(_vacant)
-    {
-    }
-    inline void free()
-    {
-        vacant = true;
-    }
-    inline std::string tostr()
-    {
-        return "(reg){(id=" + std::to_string(id) + ") op=" + std::to_string(operable) + ", vacant=" + std::to_string(vacant) + '}';
-    }
-};
-
-template <typename _T>
-using sharedt = std::shared_ptr<_T>;
-typedef RBC_VALUE_T rbc_value;
 
 struct rbc_command
 {
@@ -158,15 +43,7 @@ struct rbc_command
     std::string toHumanStr();
 };
 
-typedef std::pair<std::shared_ptr<rs_variable>, bool> rbc_func_var_t;
 
-struct project_fragment
-{
-    std::string fileName;
-    std::string fileContent;
-
-    token_list tokens;
-};
 
 struct rbc_function_generics
 {
@@ -246,7 +123,7 @@ struct rbc_program
     std::vector<rs_type_info> genericTypeConversions;
 
 public:
-    sharedt<rs_variable> getVariable(const std::string &name);
+    sharedt<rs_variable>  getVariable(const std::string &name);
     sharedt<rbc_register> getFreeRegister(bool operable = false);
     sharedt<rbc_register> makeRegister(bool operable = false, bool vacant = true);
 
@@ -286,7 +163,6 @@ namespace rbc_commands
     };
 };
 
-typedef std::deque<std::shared_ptr<project_fragment>> fragment_ptr_deque;
 void preprocess(token_list &, std::string, std::string &, rs_error *, fragment_ptr_deque &,
                 std::shared_ptr<std::vector<std::filesystem::path>> = nullptr);
 
@@ -393,7 +269,10 @@ namespace conversion
         _This invoke(const std::string &module, rbc_function &func);
         _This Return(bool val);
         std::shared_ptr<comparison_register> compareNull(const bool scoreboard, const std::string &where, const bool eq);
-        std::shared_ptr<comparison_register> compare(const std::string &locationType, const std::string &lhs, const bool eq, const std::string &rhs, const bool rhsIsConstant = false);
+        std::shared_ptr<comparison_register> compare(const std::string &locationType, const std::string &lhs,
+                                                     const bool eq,
+                                                     const std::string &rhs,
+                                                     const bool rhsIsConstant = false);
 
         std::shared_ptr<comparison_register> getFreeComparisonRegister();
         static mc_command makeCopyStorage(const std::string &dest, const std::string &src);
@@ -401,8 +280,10 @@ namespace conversion
         static mc_command getRegisterValue(rbc_register &reg);
         static mc_command makeAppendStorage(const std::string &dest, const std::string &_const);
 
-        static mc_command getStackValue(long index);
+        static mc_command            getStackValue(long index);
         constexpr static std::string getTypedNullConstant(const rs_type_info& t);
+        static std::string           accessList(const std::vector<size_t>& indicies);
+
         _This setRegisterValue(rbc_register &reg, rbc_value &c);
         _This setVariableValue(rs_variable &var, rbc_value &val);
     };
