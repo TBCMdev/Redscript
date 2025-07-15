@@ -4,30 +4,10 @@
 
 // types
 #include "types.hpp"
-#include "var_access.hpp"
-#include "rbc.hpp" // includes rbc_types already
+#include "rbc.hpp" // included rbc_types already
 
-#include "lang.hpp"
-
-#define ABORT_PARSE throw program.context
-#define COMP_ERROR(_ec, message, ...)                                    \
-    {                                                                    \
-        err = rs_error(message, *content, currentToken->trace, std::make_shared<std::vector<std::string>>(program.callStackStr()), currentFile->fileName, ##__VA_ARGS__);  \
-        err.trace.ec = _ec;                                             \
-        ABORT_PARSE;                                                     \
-    }
-#define COMP_ERROR_R(_ec, message, ret, ...)                             \
-    {                                                                    \
-        err = rs_error(message, *content, currentToken->trace, std::make_shared<std::vector<std::string>>(program.callStackStr()), currentFile->fileName, ##__VA_ARGS__);  \
-        err.trace.ec = _ec;                                             \
-        ABORT_PARSE;                                                     \
-    }
-#define COMP_ERROR_T(_ec, message, _trace, ...)                             \
-    {                                                                    \
-        err = rs_error(message, *content, _trace, std::make_shared<std::vector<std::string>>(program.callStackStr()), currentFile->fileName, ##__VA_ARGS__);  \
-        err.trace.ec = _ec;                                             \
-        ABORT_PARSE;                                                     \
-    }
+#include "types/project_fragment.hpp"
+#include "types/rs_expression.hpp"
 
 struct rbc_parser_flags
 {

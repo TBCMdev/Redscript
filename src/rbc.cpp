@@ -1,9 +1,24 @@
 #include "rbc.hpp"
-#include "lang.hpp"
+
+#include <regex>
+#include <format>
+
 #include "lexer.hpp"
 #include "file.hpp"
 #include "mchelpers.hpp"
-#include <regex>
+
+#include "types/project_fragment.hpp"
+
+#include "types/rs_object.hpp"
+#include "types/rbc_constant.hpp"
+#include "types/rbc_register.hpp"
+#include "types/rs_list.hpp"
+#include "types/rs_variable.hpp"
+
+#include "types/rbc_value.hpp"
+
+#include "types/rbc_types.hpp"
+
 
 namespace rbc_commands
 {
@@ -79,6 +94,7 @@ rbc_function::rbc_function(const rbc_function& other, const std::vector<rs_type_
     }
 }
 #pragma region decorators
+
 rbc_function_decorator parseDecorator(const std::string& name)
 {
     if (name == "extern") return rbc_function_decorator::EXTERN;
@@ -1468,6 +1484,8 @@ namespace conversion
             }
             case 4:
             {
+                var.comp_info.varIndex = context.varStackCount++;
+
                 //  0, 1, 2, 3
                 // v = [4, x, 4, y]
 
@@ -1576,6 +1594,13 @@ namespace conversion
                 // add all commands after we init
                 for (auto& cmd : initCommands) add(cmd);
 
+                break;
+            }
+            case 6:
+            {
+                rs_var_access_path path = std::get<6>(val);
+                createVariable(var);
+                copyStorage(MC_VARIABLE_VALUE(var.comp_info.varIndex), path.toCompiledPath());
                 break;
             }
         }

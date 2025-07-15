@@ -1,35 +1,13 @@
-#include "lang.hpp"
-#include "rbc.hpp"
-#define EXPR_ERROR_R(_ec, _message, _trace, ret, ...)                             \
-    {                                                                    \
-        program.context = new rs_error(_message, program.currentFragment->fileContent, _trace, std::make_shared<std::vector<std::string>>(program.callStackStr()), program.currentFragment->fileName, ##__VA_ARGS__);  \
-        program.context->trace.ec = _ec;                                             \
-        throw program.context;                                                     \
-    }
+#include "rs_expression.hpp"
 
-#pragma region variable_access
+#include "rbc_value.hpp"
+#include "rbc_register.hpp"
 
-std::string rs_var_access_path::toPath()
-{
-    std::stringstream stream;
-    stream << fromVar->name;
-    for(auto& p : segments)
-    {
-        if (p.isArray)
-            stream << '[' << p.accessKey.val << ']';
-        else
-            stream << '.' << p.accessKey.val;
-    }
-
-    return stream.str();
-}
-
-#pragma endregion variable_access
-
-#pragma region objects
+#include "../rbc.hpp"
+#include "../errors.hpp"
 
 
-#pragma endregion objects
+
 #pragma region expressions
 
 rs_expression::_ResultT rs_expression::rbc_evaluate(rbc_program& program, bst_operation<token>* node)

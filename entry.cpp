@@ -97,7 +97,7 @@ int main(int argc, char* const* argv)
         return EXIT_FAILURE;
     }
 
-    if(debug || 1)
+    if(debug)
     {
         INFO("Token Count: %zu", list.size());
         for(auto& tok : list)
@@ -134,7 +134,7 @@ int main(int argc, char* const* argv)
         return EXIT_FAILURE;
     }
     int i = 1;
-    if (debug || 1)
+    if (debug)
     {
         std::ofstream out("./out.rbc");
         INFO("Writing global byte code to out.rbc...");

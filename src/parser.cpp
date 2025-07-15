@@ -1,5 +1,15 @@
 #include "parser.hpp"
 
+#include "types/rs_object.hpp"
+#include "types/rbc_constant.hpp"
+#include "types/rbc_register.hpp"
+#include "types/rs_list.hpp"
+#include "types/rs_variable.hpp"
+
+#include "types/rbc_value.hpp"
+
+#include "types/rbc_types.hpp"
+
 #pragma region lang
 
 std::shared_ptr<rs_object>   rbc_parser::inlineobjparse   ()
@@ -42,27 +52,43 @@ std::shared_ptr<rs_object>   rbc_parser::inlineobjparse   ()
     return std::make_shared<rs_object>(obj);
     
 }
+// called at index of first access token
 rs_var_access_path rbc_parser::parse_var_path_access(std::shared_ptr<rs_variable>& var)
 {
     rs_var_access_path path{var};
+    rs_type_info currentType = var->type_info;
     while(1)
     {
         if (equals(token_type::SQBRACKET_OPEN))
         {
             adv(); // for better errors
-            if (equals(token_type::CBRACKET_CLOSED))
+            if (equals(token_type::SQBRACKET_CLOSED))
                 COMP_ERROR(RS_SYNTAX_ERROR, "Expected integer constant.");
             if (!equals(token_type::INT_LITERAL))
                 COMP_ERROR(RS_SYNTAX_ERROR, "Indexing arrays can only be done with integer constants. use array::at() to access an array via variables or other.");
-            
+
+            if (currentType.array_count <= 0)
+                COMP_ERROR(RS_SYNTAX_ERROR, "Cannot index value of non list type (evaldT={})", currentType.tostr());
+            currentType = currentType.element_type();
+
             path.segments.push_back(rs_var_access_path_item{rbc_constant(token_type::INT_LITERAL, currentToken->repr), true});
+            adv();
+
+            expect(token_type::SQBRACKET_CLOSED);
         }
         else if (equals(token_type::OBJECT_ACCESS_OPERATOR))
         {
             COMP_ERROR(RS_UNSUPPORTED_OPERATION_ERROR, "Object accessing has yet to be implemented.");
         }
         else break;
+
+        token* t;
+        if ((t = peek()) && t->type == token_type::LINE_END)
+            break;
+
+        adv();
     }
+    path.evaluatedType = currentType;
     return path;
 }
 bst_operation<token>         rbc_parser::make_bst         (bool br, bool oneNode, bool obj)
@@ -122,8 +148,8 @@ bst_operation<token>         rbc_parser::make_bst         (bool br, bool oneNode
         case token_type::LIST_LITERAL:
         case token_type::OBJECT_LITERAL:
         case token_type::WORD:
+        case token_type::KW_NULL:
         {
-        _parseconst:
             if (currentToken->type == token_type::WORD)
             {
                 sharedt<rs_variable> v;
@@ -137,11 +163,10 @@ bst_operation<token>         rbc_parser::make_bst         (bool br, bool oneNode
                 }
                 else
                 {
-                    const rs_var_access_path path = parse_var_path_access(v);
-
+                    rs_var_access_path path = parse_var_path_access(v);
+                    path.fromVar = v;
                     if(!root.assignNext(path))
                         COMP_ERROR(RS_SYNTAX_ERROR, "Missing operator.");
-                    break;
                 }    
             }
             else if (!root.assignNext(*currentToken))
@@ -219,11 +244,21 @@ void                         rbc_parser::prune_expr       (bst_operation<token>&
 {
     using _NodeT = bst_operation<token>;
     using _ValueT = bst_operation<token>::_NodeT;
-    bool lSingle  = expr.left->index();
-    
-    bool rSingle = expr.right ? expr.right->index() : false;
 
-    
+    // declared here for lambda simplicity
+    token result;
+
+
+    bool lSingle  = expr.left->index();
+    bool rSingle = expr.right ? expr.right->index() : false;
+#pragma region expression_compute_methods
+    const static auto _impl_computeint =
+        [&](const token& left, const token& right)
+        {
+            int r  = operator_compute(std::stoi(left.repr), expr.operation, std::stoi(right.repr));
+            result.repr = std::to_string(r);
+        };
+#pragma endregion expression_compute_methods
     if (lSingle && rSingle)
     {
         // compute
@@ -237,33 +272,64 @@ void                         rbc_parser::prune_expr       (bst_operation<token>&
 
         token& left = std::get<token>(lVariant);
         token& right = std::get<token>(rVariant);
-        std::string result;
         if(left.type == right.type)
         {
+            result = left; // doesnt matter left or right
             switch (left.type)
             {
                 case token_type::INT_LITERAL:
                 {
-                    int r  = operator_compute(std::stoi(left.repr), expr.operation, std::stoi(right.repr));
-                    result = std::to_string(r);
+                    _impl_computeint(left, right);
                     break;
                 }
                 default:
-                    WARN("No supported operation of same type (T=%d)", static_cast<int>(left.type));
+                    COMP_ERROR(RS_UNSUPPORTED_OPERATION_ERROR, "No supported operation of same type (T={})", tutil::type_to_str(left.type));
                     break;
             }
         }
         else
         {
-            WARN("No supported operation of same type (T=%d)", static_cast<int>(left.type));
-        }
-        if(!result.empty())
-        {
-            token copy = left;
-            copy.repr = result;
-            expr.makeSingular(copy);
-        }
 
+            // edge cases
+            const static pairedkey_map<token_type, combination_functor<token>> map = 
+            {
+                // DEPRECATED -- TODO REMOVE -- NO MATH WITH NULL KEYWORD ALLOWED
+                // because we are adding to null, we just return the number we are adding as null = 0
+                // { {token_type::KW_NULL, token_type::INT_LITERAL} , [&result](UNUSED const token& lhs, const token& rhs)
+                //     { 
+                //         // must assign result a trace object, as well as type of rhs (int)
+                //         result = rhs;
+                //         result.repr = rhs.repr;
+                //     }
+                // }
+            };
+
+            bool found = combinationCommutativeEquals(left.type, right.type, left, right, map);
+
+            if (!found)
+            {
+                std::string lType = tutil::type_to_str(left.type), rType = tutil::type_to_str(right.type);
+                // for nice errors, check if the sides are variables and fetch their types
+                if (left.type == token_type::WORD)
+                {
+                    auto var = program.getVariable(left.repr);
+                    if (var)
+                        lType = var->type_info.tostr();
+                }
+                if (right.type == token_type::WORD)
+                {
+                    auto var = program.getVariable(right.repr);
+                    if (var)
+                        rType = var->type_info.tostr();
+                }
+
+                COMP_ERROR(RS_UNSUPPORTED_OPERATION_ERROR, "No supported operation of different type (T={}, T1={})",
+                    lType,
+                    rType);
+            }
+        }
+        if(!result.repr.empty())
+            expr.makeSingular(result);
     }
     else
     {
@@ -353,7 +419,7 @@ bool                         rbc_parser::typeverify       (const rs_type_info& t
                     default:
                         error = "Evaluated type of this expression is not allowed here.";
                 }
-                COMP_ERROR_T(RS_SYNTAX_ERROR, error, *c.trace, false, x, t.type_id);
+                COMP_ERROR_T(RS_SYNTAX_ERROR, error, *c.trace, false, tutil::type_to_str(c.val_type), t.tostr());
             }
             break;
         }
@@ -1023,33 +1089,51 @@ _skip_type:
             program(rbc_commands::variables::storeReturn(variable));
             break;
         }
+
+        using _ValueT = bst_operation<token>::_NodeT;
+
         rs_expression expr = expreval();
         variable->value = std::make_shared<rs_expression>(expr);
-        // we dont want to create variables defined in an object. We handle that another way.
+        
         if (expr.operation.isSingular() && !obj && !expr.nonOperationalResult)
         {
-            token& value = std::get<token>(*expr.operation.left);
-            if (value.type == token_type::WORD)
-            {
-                sharedt<rs_variable> var = program.getVariable(value.repr);
+            _ValueT& leftVal = std::get<_ValueT>(*expr.operation.left);
 
-                if (!variable->type_info.equals(var->type_info))
-                    COMP_ERROR(RS_SYNTAX_ERROR, "Cannot copy varaible of to variable of different type.");
+            if (leftVal.index())
+            {
+                // convert path to rbc value and let transpiler convert it
+                rbc_value path = std::get<rs_var_access_path>(leftVal);
+
+                if (needsCreation)
+                    program(rbc_commands::variables::create(variable, path));
+                else
+                    program(rbc_commands::variables::set(variable, path));
             }
-            else if (!variable->type_info.equals(value.info))
-                COMP_ERROR_R(RS_SYNTAX_ERROR, "Cannot assign constant of type {} to variable of type {}.", nullptr, value.info, variable->type_info.type_id);
-            
-            rbc_value val = value.type == token_type::WORD ? program.getVariable(value.repr) : rbc_value(rbc_constant(value.type, value.repr, std::make_shared<raw_trace_info>(value.trace)));
-            // no need to evaluate.
-            if (needsCreation)
-                program(rbc_commands::variables::create(variable, val));
             else
-                program(rbc_commands::variables::set(variable, val));
+            {
+
+                token& value = std::get<token>(leftVal);
+                if (value.type == token_type::WORD)
+                {
+                    sharedt<rs_variable> var = program.getVariable(value.repr);
+
+                    if (!variable->type_info.equals(var->type_info))
+                        COMP_ERROR(RS_SYNTAX_ERROR, "Cannot copy varaible of to variable of different type.");
+                }
+                else if (!variable->type_info.equals(value.info))
+                    COMP_ERROR_R(RS_SYNTAX_ERROR, "Cannot assign constant of type {} to variable of type {}.", nullptr, tutil::type_to_str(value.info), variable->type_info.full_type_name());
+                
+                rbc_value val = value.type == token_type::WORD ? program.getVariable(value.repr) : rbc_value(rbc_constant(value.type, value.repr, std::make_shared<raw_trace_info>(value.trace)));
+                // no need to evaluate.
+                if (needsCreation)
+                    program(rbc_commands::variables::create(variable, val));
+                else
+                    program(rbc_commands::variables::set(variable, val));
+            }
+            
         }
         else if (!obj)
         {
-           
-
             rbc_value result = expr.rbc_evaluate(program);
 
             // list
@@ -1308,7 +1392,7 @@ void                         rbc_parser::parseCurrent     ()
         }
         // we are defining the return type
         retType = typeparse();
-        if(retType.equals(RS_NULL_KW_ID))
+        if(!retType.generic && retType.equals(RS_NULL_KW_ID))
             COMP_ERROR(RS_SYNTAX_ERROR, "A functions' return type cannot be marked as null, use 'void' instead.");            
         
         expect(token_type::WORD);
@@ -1558,6 +1642,15 @@ void                         rbc_parser::parseCurrent     ()
         {
             // function call TODO
             if(!callparse(start.repr, true, nullptr))
+                ABORT_PARSE;
+        }
+        else if (follows(token_type::MODULE_ACCESS))
+        {
+            auto _module = program.modules.find(currentToken->repr);
+            if (_module == program.modules.end())
+                COMP_ERROR(RS_SYNTAX_ERROR, "Unknown module name.");
+
+            if (!parsemoduleusage(_module->second))
                 ABORT_PARSE;
         }
         else

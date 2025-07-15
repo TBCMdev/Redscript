@@ -5,16 +5,15 @@
 
 #if 1
 
-#define ERROR_COLOR "\x1b[91m"
-#define ERROR_RESET "\x1b[0m"
-#define ERROR_NOTE_COLOR "\x1b[38;5;55m"
-#define GRAY_COLOR "\x1b[90m"
+#define ERROR_COLOR           "\x1b[38;5;196m"  // Bright red
+#define ERROR_RESET           "\x1b[0m"
+#define ERROR_NOTE_COLOR      "\x1b[38;5;33m"   // Bright blue (deep sky blue)
+#define GRAY_COLOR            "\x1b[38;5;245m"  // Medium-light gray
 
-#define KEYWORD_HIGHLIGHT_COLOR "\x1b[1;35m"  // Bold + Bright Purple (Magenta)
-#define TYPE_HIGHLIGHT_COLOR    "\x1b[1;33m"  // Bold + Bright Yellow
+#define KEYWORD_HIGHLIGHT_COLOR "\x1b[1;38;5;201m"  // Bold + Vivid magenta/pink
+#define TYPE_HIGHLIGHT_COLOR    "\x1b[1;38;5;226m"  // Bold + Bright yellow
 
-
-#define ERROR(x, ...) printf("\x1b[31m[ERROR] " x "\x1b[0m\n", ##__VA_ARGS__);
+#define ERROR(x, ...) printf(ERROR_COLOR "[ERROR] " x "\x1b[0m\n", ##__VA_ARGS__);
 #define SUCCESS(x,  ...) printf("\x1b[32m[SUCCESS] " x "\x1b[0m\n", ##__VA_ARGS__);
 #define WARN(x,  ...) printf("\x1b[33m[WARN] " x "\x1b[0m\n", ##__VA_ARGS__);
 #define UNIMPORTANT(x, ...) printf("\x1b[30m[UNIMPORTANT] " x "\x1b[0m\n", ##__VA_ARGS__);

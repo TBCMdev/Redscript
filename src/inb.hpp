@@ -6,17 +6,9 @@
 
 #include "globals.hpp"
 
+#include "types/rbc_value.hpp"
+
 // forward decls for rbc_value
-struct rbc_constant;
-struct rbc_register;
-struct rs_variable;
-struct rs_object;
-struct rs_list;
-struct rs_var_access_path;
-typedef RBC_VALUE_T rbc_value;
-
-
-
 namespace conversion
 {
     class CommandFactory;

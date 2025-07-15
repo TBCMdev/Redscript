@@ -3,6 +3,7 @@
 #include <cstdint>
 #include <vector>
 #include <functional>
+#include <format>
 
 #include "constants.hpp"
 
@@ -21,7 +22,7 @@ struct rs_type_info
     std::vector<rs_type_info> otherTypes = {}; // others if specified
     //              arrOptional, arrStrict
 
-    std::vector<std::pair<bool, bool>> arrayFlags;
+    std::vector<std::pair<bool, bool>> arrayFlags = {};
     inline std::string full_type_name() const
     {
         std::string ret = type_name();
@@ -59,18 +60,23 @@ struct rs_type_info
                 return "unknown";
         }
     }
+    inline static std::string type_name(int32_t id)
+    {
+        return rs_type_info{id, 0}.type_name();
+    }
     inline std::string tostr() const
     {
         std::string typestr = full_type_name();
+        
+        if (optional) typestr.push_back('?');
         if (strict)   typestr.push_back('!');
 
         for(size_t i = 0; i < otherTypes.size(); i++)
             typestr += '|' + otherTypes.at(i).tostr();
 
-        if (array_count != 0)
-            typestr += '[' + std::to_string(array_count) + ']';  
+        // if (array_count != 0)
+        //     typestr += '[' + std::to_string(array_count) + ']';  
             
-        if (optional) typestr.push_back('?');
         
         return typestr;
     }
@@ -101,13 +107,21 @@ struct rs_type_info
 
         return true;
     }
+    // when a type such as T[]? exists, the ? infers that the type is optional.
+    // however, in this struct, optional = false, as the optional field applies solely
+    // to the type T, so T?[] would yield optional = true.
+    // this function returns whether the entire array type is optional.
+    inline bool isFinallyOptional() const
+    {
+        return (array_count > 0 && arrayFlags.back().first);
+    }
     inline bool equals(const rs_type_info& other) const
     {
         const bool aeq = array_count == other.array_count && compareArrayFlags(other);
 
-        return ((generic && !other.generic && aeq)
-            ||  (generic && generic_id == other.generic_id && aeq))
-            || (optional && other.type_id == RS_NULL_KW_ID)
+        return ((generic && !other.generic)
+            ||  (generic && generic_id == other.generic_id))
+            || (other.type_id == RS_NULL_KW_ID && ((optional && array_count == 0) || isFinallyOptional())) // for null comparisons
             || (other.type_id == type_id && aeq && other.optional == optional && other.strict == strict)
             || canConvertTo(other);
     }
@@ -119,7 +133,9 @@ struct rs_type_info
         // int? -> int : no
         // int -> int!
 
-        return (generic && array_count == 0) || (type == type_id && array_count == 0);
+        return (type == RS_NULL_KW_ID && ((optional && array_count == 0) || isFinallyOptional())) // for null comparisons
+            || (generic && array_count == 0)
+            || (type == type_id && array_count == 0);
     }
     inline bool canConvertTo(const rs_type_info& other) const
     {
@@ -194,7 +210,6 @@ namespace std {
         }
     };
 
-    // ALSO define hash for vector<rs_type_info>
     template<>
     struct hash<std::vector<rs_type_info>> {
         std::size_t operator()(const std::vector<rs_type_info>& vec) const {

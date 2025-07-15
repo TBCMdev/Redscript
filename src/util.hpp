@@ -9,8 +9,10 @@
 #include <functional>
 #include <sstream>
 #include <iomanip>
-
+#include <unordered_map>
 #include <type_traits>
+
+#define UNUSED [[maybe_unused]]
 
 inline std::string removeSpecialCharacters(const std::string &input)
 {
@@ -96,6 +98,68 @@ inline constexpr result_pair<_VariantT, _VariantT2> commutativeVariantEquals(siz
 
     return result_pair<_VariantT, _VariantT2>();
 }
+
+/*
+Returns a result pair (true or false along with the ordered native values) if lhs and rhs both equal lhsval or rhsval, granted
+they don't equal the same value.
+*/
+template<typename _ComparisonT, typename _ValueT>
+inline constexpr result_pair<_ValueT, _ValueT> commutativeEquals(const _ComparisonT& lhs, const _ComparisonT& lhsval,
+                                                                 const _ComparisonT& rhs, const _ComparisonT& rhsval,
+                                                                 _ValueT& lhsnative,
+                                                                 _ValueT& rhsnative)
+{
+    if (lhs == lhsval && rhs == rhsval)
+        return result_pair(lhsnative, rhsnative);
+    if (rhs == lhsval && lhs == rhsval)
+        return result_pair(rhsnative, lhsnative);
+
+    return result_pair<_ValueT, _ValueT>();
+}
+
+struct EnumPairHash {
+    template <typename T1, typename T2>
+    std::size_t operator()(const std::pair<T1, T2>& p) const {
+        using U1 = std::underlying_type_t<T1>;
+        using U2 = std::underlying_type_t<T2>;
+
+        std::size_t h1 = std::hash<U1>{}(static_cast<U1>(p.first));
+        std::size_t h2 = std::hash<U2>{}(static_cast<U2>(p.second));
+
+        return h1 ^ (h2 << 1);
+    }
+};
+
+template<typename _KeyValT, typename _ValT, typename _Hasher>
+using pairedkey_map_t = std::unordered_map<std::pair<_KeyValT, _KeyValT>, _ValT, _Hasher>;
+template<typename _KeyValT, typename _ValT>
+using pairedkey_map   = std::unordered_map<std::pair<_KeyValT, _KeyValT>, _ValT, EnumPairHash>;
+
+template<typename _ValueT>
+using combination_functor = std::function<void(const _ValueT&, const _ValueT&)>;
+
+// will only call 1 key,val pair.
+template<typename _ComparisonT, typename _ValueT>
+inline constexpr bool combinationCommutativeEquals(const _ComparisonT& lhs,
+                                                   const _ComparisonT& rhs,
+                                                   _ValueT& lhsnative,
+                                                   _ValueT& rhsnative,
+                                                   const pairedkey_map
+                                                        <_ComparisonT, combination_functor<_ValueT>>&
+                                                                       vals)
+{
+    for(const auto& [key, val] : vals)
+    {
+        auto result = commutativeEquals(lhs, key.first, rhs, key.second, lhsnative, rhsnative);
+        if (result)
+        {
+            val(lhsnative, rhsnative);
+            return true;
+        }
+    }
+    return false;
+}
+
 
 template <typename T, typename Container = std::deque<T>>
 class iterable_stack : public std::stack<T, Container>

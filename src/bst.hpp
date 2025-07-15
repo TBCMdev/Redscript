@@ -3,7 +3,7 @@
 #include <memory>
 #include <variant>
 
-#include "var_access.hpp"
+#include "types/rs_var_access_path.hpp"
 
 template<typename _Storage>
 struct bst_node

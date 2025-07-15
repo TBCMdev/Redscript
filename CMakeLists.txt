@@ -19,19 +19,28 @@ endif()
 
 add_compile_options(-g3 -pipe)
 
+file(GLOB TYPES_SOURCES "${CMAKE_SOURCE_DIR}/src/types/*.cpp")
+
+add_library(redscript_types ${TYPES_SOURCES})
+
+
+
+
 add_library(redscript_lib
 	src/config.cpp
 	src/error.cpp
     src/file.cpp
 	src/inb.cpp
-	src/lang.cpp
 	src/lexer.cpp
 	src/mc.cpp
 	src/rbc.cpp
 	src/util.cpp
 	src/parser.cpp
+	src/bst.cpp
 )
 
 add_executable(rscript entry.cpp)
 target_link_libraries(rscript PRIVATE redscript_lib)
+target_link_libraries(rscript PRIVATE redscript_types)
+target_include_directories(rscript PUBLIC ${CMAKE_SOURCE_DIR}/types)
 target_include_directories(rscript PUBLIC src)

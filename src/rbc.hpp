@@ -18,9 +18,10 @@
 #include "util.hpp"
 #include "inb.hpp"
 
+#include "types/project_fragment.hpp"
+
 #include "type_info.hpp"
 #include "types.hpp"
-
 
 
 rbc_function_decorator parseDecorator(const std::string &);

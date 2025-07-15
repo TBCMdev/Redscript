@@ -5,6 +5,7 @@
 #include <format>
 
 #include "error.hpp"
+#include "constants.hpp"
 
 enum class token_type
 {
@@ -78,19 +79,22 @@ enum class token_type
 #define TT_KEYWORDS_END static_cast<int>(token_type::KW_NULL)
 };
 
+
+
 namespace tutil
 {
+    
     inline constexpr std::string type_to_str(const token_type& tt)
     {
         switch (tt)
         {
             case token_type::WORD: return "word";
-            case token_type::INT_LITERAL: return "int literal";
-            case token_type::STRING_LITERAL: return "string literal";
-            case token_type::FLOAT_LITERAL: return "float literal";
-            case token_type::LIST_LITERAL: return "list literal";
-            case token_type::OBJECT_LITERAL: return "object literal";
-            case token_type::SELECTOR_LITERAL: return "selector literal";
+            case token_type::INT_LITERAL: return "int (literal)";
+            case token_type::STRING_LITERAL: return "string (literal)";
+            case token_type::FLOAT_LITERAL: return "float (literal)";
+            case token_type::LIST_LITERAL: return "list (literal)";
+            case token_type::OBJECT_LITERAL: return "object (literal)";
+            case token_type::SELECTOR_LITERAL: return "selector (literal)";
 
             case token_type::COMMENT_INLINE: return "inline comment";
             case token_type::COMMENT_MULTILINE: return "multiline comment";
@@ -154,6 +158,30 @@ namespace tutil
             default: return "unrecognized";
         }
     }
+    inline constexpr std::string type_to_str(const int32_t& tt)
+    {
+        switch (tt)
+        {
+            case RS_INT_KW_ID:
+                return "int";
+            case RS_STRING_KW_ID:
+                return "string";
+            case RS_FLOAT_KW_ID:
+                return "float";
+            case RS_LIST_KW_ID:
+                return "list";
+            case RS_OBJECT_KW_ID:
+                return "object";
+            case RS_SELECTOR_KW_ID:
+                return "selector";
+            case RS_NULL_KW_ID:
+                return "null";
+            case RS_VOID_KW_ID:
+                return "void";
+            default:
+                return "unknown";
+        }
+    }
     inline constexpr std::string type_to_str_full(const token_type& tt)
     {
         const int index = static_cast<int>(tt);
@@ -166,8 +194,8 @@ namespace tutil
 
 struct token
 {
-    std::string repr;
-    token_type  type;
+    std::string repr = "";
+    token_type  type = token_type::UNKNOWN;
     int32_t     info = -1;
 
     raw_trace_info trace;
@@ -190,6 +218,8 @@ struct token
     }
     token(std::string _repr, token_type _type, uint32_t _info, raw_trace_info _trace)
         : repr(_repr), type(_type), info(_info), trace(_trace) {}
+
+    token(){}
 };
 
 typedef std::vector<token> token_list;

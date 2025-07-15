@@ -1,10 +1,14 @@
-y:
-	CREATE {{test, 0, 0, 8}, name=test, scope=1, typeinf=int, (g=0, c=0)}, (const){T=1, v=56}
-	SAVE (reg){(id=0) op=1, vacant=1}, {{test, 0, 0, 8}, name=test, scope=1, typeinf=int, (g=0, c=0)}
-	MATH (reg){(id=0) op=1, vacant=1}, (const){T=1, v=2}, (const){T=1, v=0}
-	CREATE {{x, 0, 0, 5}, name=x, scope=1, typeinf=int[][][2], (g=0, c=0)}, 
 msg:
 setattr:
 type:
 kill:
 getattr:
+CREATE {{x, 0, 0, 7}, name=x, scope=0, typeinf=int, (g=1, c=1)}, (const){T=1, v=4}
+PUSH (const){T=2, v=msg}, (const){T=2, v=__p}, (const){T=6, v=r}
+PUSH (const){T=2, v=msg}, (const){T=2, v=__msg}, {{x, 0, 0, 7}, name=x, scope=0, typeinf=int, (g=1, c=1)}
+CALL 
+CREATE {{mylist, 0, 0, 6}, name=mylist, scope=0, typeinf=int[], (g=1, c=0)}, 
+CREATE {{y, 0, 0, 7}, name=y, scope=0, typeinf=int, (g=1, c=1)}, 
+PUSH (const){T=2, v=msg}, (const){T=2, v=__p}, (const){T=6, v=r}
+PUSH (const){T=2, v=msg}, (const){T=2, v=__msg}, {{y, 0, 0, 7}, name=y, scope=0, typeinf=int, (g=1, c=1)}
+CALL 

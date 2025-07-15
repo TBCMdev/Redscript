@@ -48,7 +48,8 @@ struct rs_error
                     trace(_trace),
                     message(std::vformat(
                         std::string_view(_message),
-                        std::make_format_args(std::forward<_Args>(_variables)...))),
+                        std::make_format_args(static_cast<const std::remove_reference_t<_Args>&>(_variables)...)
+                    )),
                     fName(_fName),
                     content(std::make_shared<std::string>(_content))
     {
@@ -63,7 +64,8 @@ struct rs_error
                trace{0, std::make_shared<size_t>(_raw.at), _raw.line, _raw.caret, _raw.nlindex, _raw.start},
                message(std::vformat(
                         std::string_view(_message),
-                        std::make_format_args(std::forward<_Args>(_variables)...))),
+                        std::make_format_args(static_cast<const std::remove_reference_t<_Args>&>(_variables)...)
+                    )),
                fName(_fName),
                content(std::make_shared<std::string>(_content))
     {
@@ -79,7 +81,8 @@ struct rs_error
                     trace(_trace),
                     message(std::vformat(
                         std::string_view(_message),
-                        std::make_format_args(std::forward<_Args>(_variables)...))),
+                        std::make_format_args(static_cast<const std::remove_reference_t<_Args>&>(_variables)...)
+                    )),
                     fName(_fName),
                     content(std::make_shared<std::string>(_content)),
                     callTrace(_callTrace)
@@ -96,7 +99,8 @@ struct rs_error
                     trace{0, std::make_shared<size_t>(_raw.at), _raw.line, _raw.caret, _raw.nlindex, _raw.start},
                     message(std::vformat(
                         std::string_view(_message),
-                        std::make_format_args(std::forward<_Args>(_variables)...))),
+                        std::make_format_args(static_cast<const std::remove_reference_t<_Args>&>(_variables)...)
+                    )),
                     fName(_fName),
                     content(std::make_shared<std::string>(_content)),
                     callTrace(_callTrace)

@@ -1,5 +1,4 @@
 #pragma once
-#include "constants.hpp"
 
 // all must match with token.hpp/enum:token_type
 #define RS_INT_KW_ID 1
