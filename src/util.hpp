@@ -11,8 +11,195 @@
 #include <iomanip>
 #include <unordered_map>
 #include <type_traits>
+#include <unordered_set>
 
 #define UNUSED [[maybe_unused]]
+
+
+inline constexpr std::string color_format(const std::string& _msg, const std::string& color, const std::string& reset_color)
+{
+    std::string copy = _msg;
+
+    size_t caret = copy.find("{}");
+
+    const size_t offset = color.size() + reset_color.size();
+
+    while (caret != std::string::npos)
+    {
+
+        copy.replace(caret, 2, color + "{}" + reset_color);
+
+        caret = copy.find("{}", caret + offset + 2);
+    }
+ 
+    return copy;
+}
+
+template<typename _Ty>
+struct wrapper
+{
+    _Ty val;
+};
+
+template<typename _Ty>
+struct shared_wrapper
+{
+    using _El = wrapper<std::shared_ptr<_Ty>>;
+    std::shared_ptr<_El> element;
+
+    constexpr shared_wrapper() noexcept : element() {} explicit
+    constexpr shared_wrapper(std::nullptr_t) noexcept : element(nullptr) {}
+
+    template<typename... _Args>
+    shared_wrapper(_Args&&... args) : element(std::make_shared<_El>(args...)) {}
+
+    shared_wrapper& operator=(const std::shared_ptr<_Ty>& nonWrapperLike)
+    {
+        element->val = nonWrapperLike;
+
+        return *this;
+    }
+    _Ty& operator*()
+    {
+        return *element->val;
+    }
+    _Ty* operator->()
+    {
+        return element->val.get();
+    }
+};
+#pragma region weak_ptr
+/*
+THE BELOW IMPL HAS BEEN DEFINED IN C++26
+*/
+template<typename T>
+struct weak_ptr_hash {
+    std::size_t operator()(const std::weak_ptr<T>& wp) const noexcept {
+        if (auto sp = wp.lock())
+            return std::hash<T*>{}(sp.get());
+        return std::hash<T*>{}(nullptr);
+        
+    }
+};
+
+// Equality comparator for weak_ptr
+template<typename T>
+struct weak_ptr_equal {
+    bool operator()(const std::weak_ptr<T>& lhs, const std::weak_ptr<T>& rhs) const noexcept {
+        return lhs.lock().get() == rhs.lock().get();
+    }
+};
+/*
+@deprecated 
+*/
+#pragma endregion weak_ptr
+template<typename _Ty>
+struct linked_ptr : std::enable_shared_from_this<linked_ptr<_Ty>>
+{
+    using shared    = std::shared_ptr<_Ty>;
+
+    using conn_item = std::weak_ptr<linked_ptr<_Ty>>;
+    using conn_list = std::unordered_set< conn_item, weak_ptr_hash<linked_ptr<_Ty>>, weak_ptr_equal<linked_ptr<_Ty>> >;
+
+    std::shared_ptr< _Ty       > _M_ptr         = nullptr;
+    std::shared_ptr< conn_list > _M_connections = nullptr;
+
+    linked_ptr(const shared& other) : _M_ptr(other)
+    {}
+    
+    linked_ptr(const _Ty& val) : _M_ptr(std::make_shared<_Ty>(val)) {}
+
+    linked_ptr(const linked_ptr<_Ty>& other) : shared(other.shared_from_this())
+    { *this = other; }
+    linked_ptr() = default;
+    
+    void _create_links()
+    {
+        _M_connections = std::make_shared<conn_list>();
+        _M_connections->insert(this->shared_from_this());
+    }
+
+    void _update_links()
+    {
+        if (!_M_connections) _create_links();
+
+        typename conn_list::iterator iter = _M_connections->begin();
+        while (iter != _M_connections->end())
+        {
+            if (auto ptr = iter->lock() && ptr != this)
+            {
+                *ptr = *this;
+                ++iter;
+            }
+            else
+                iter = _M_connections->erase(iter);
+        }
+
+    }
+    void merge_connections(const linked_ptr<_Ty>& other)
+    {
+        if (!_M_connections) _create_links();
+        
+        if (!other._M_connections || other._M_connections->empty())
+        {
+            _M_connections->insert(other.shared_from_this());
+            return;
+        }
+
+        if (_M_connections == other._M_connections) return;
+
+        _M_connections->merge(*other._M_connections);
+    }
+    linked_ptr<_Ty>& operator=(const linked_ptr<_Ty>& other)
+    {
+        _M_ptr = other._M_ptr;
+        merge_connections(other);
+
+        _update_links();
+
+        return *this;
+    }
+    _Ty& operator*()
+    {
+        return *_M_ptr;
+    }
+    _Ty& operator->()
+    {
+        return *_M_ptr;
+    }
+};
+
+template<typename _Ty>
+using linked_ptr_instance = std::shared_ptr<linked_ptr<_Ty>>;
+
+template<typename _Ty, typename... _Args>
+inline constexpr linked_ptr_instance<_Ty> make_linked(_Args&&... args)
+{
+    return std::make_shared<linked_ptr<_Ty>>(args...);
+}
+
+template<typename _FlagT, typename _FlagV>
+struct flag_list
+{
+    std::unordered_map<_FlagT, _FlagV> flags;
+
+    flag_list(std::unordered_map<_FlagT, _FlagV> Flags) : flags(Flags)
+    {}
+
+    inline _FlagV& get(const _FlagT& x) const
+    {
+        return flags.find(x)->second;
+    }
+    inline bool exists(const _FlagT& x) const
+    {
+        return flags.find(x) != flags.end();
+    }
+    inline void set(const _FlagT& x, const _FlagV& v)
+    {
+        flags.insert_or_assign({x, v});
+    }
+
+};
 
 inline std::string removeSpecialCharacters(const std::string &input)
 {
@@ -172,6 +359,11 @@ public:
     iterator end() { return this->c.end(); }
     const_iterator begin() const { return this->c.begin(); }
     const_iterator end() const { return this->c.end(); }
+
+    T& at(size_t index) const
+    {
+        return this->c.at(index);
+    }
 };
 
 namespace util

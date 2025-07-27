@@ -5,8 +5,8 @@
 
 #if 1
 
-#define ERROR_COLOR           "\x1b[38;5;196m"  // Bright red
-#define ERROR_RESET           "\x1b[0m"
+#define ERROR_COLOR           "\x1b[0;38;5;196m"  // Bright red
+#define COLOR_RESET           "\x1b[0m"
 #define ERROR_NOTE_COLOR      "\x1b[38;5;33m"   // Bright blue (deep sky blue)
 #define GRAY_COLOR            "\x1b[38;5;245m"  // Medium-light gray
 

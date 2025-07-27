@@ -6,6 +6,7 @@
 #include <format>
 
 #include "constants.hpp"
+#include "globals.hpp"
 
 struct rs_type_info
 {
@@ -14,7 +15,7 @@ struct rs_type_info
     uint32_t array_count = 0;
 
     bool optional = false;
-    bool strict   = false;
+    bool reference   = false;
 
     bool    generic    = false;
     int32_t generic_id = -1;
@@ -23,13 +24,14 @@ struct rs_type_info
     //              arrOptional, arrStrict
 
     std::vector<std::pair<bool, bool>> arrayFlags = {};
+    std::string find_generic_type_name() const;
     inline std::string full_type_name() const
     {
         std::string ret = type_name();
         if (optional)
             ret.push_back('?');
-        if (strict)
-            ret.push_back('!');
+        if (reference)
+            ret.push_back('&');
 
         for(uint32_t i = 0; i < array_count; i++)
         {
@@ -38,12 +40,14 @@ struct rs_type_info
             if (flag.first)
                 ret.push_back('?');
             if (flag.second)
-                ret.push_back('!');
+                ret.push_back('&');
         }
         return ret;
     }
     inline std::string type_name() const
     {
+        if (generic)
+            return find_generic_type_name();
         switch(type_id)
         {
             case RS_INT_KW_ID:
@@ -68,9 +72,6 @@ struct rs_type_info
     {
         std::string typestr = full_type_name();
         
-        if (optional) typestr.push_back('?');
-        if (strict)   typestr.push_back('!');
-
         for(size_t i = 0; i < otherTypes.size(); i++)
             typestr += '|' + otherTypes.at(i).tostr();
 
@@ -80,15 +81,23 @@ struct rs_type_info
         
         return typestr;
     }
+    inline rs_type_info parent_type(bool op = false, bool ref = false) const
+    {
+        auto flagsCopy = arrayFlags;
+        flagsCopy.push_back({op, ref});
+
+        return rs_type_info{type_id, array_count + 1, optional, reference, generic, generic_id, otherTypes, flagsCopy};
+    }
     inline rs_type_info element_type() const
     {
-        if (array_count < 1) return *this;
+        if (array_count == 0) return *this;
+        if (array_count == 1) return rs_type_info{type_id, 0, optional, reference, generic, generic_id, otherTypes, {}};
 
-        auto arrIndInf = arrayFlags.back();
+        auto arrIndInf = arrayFlags.at(array_count - 2);
         auto flagsCopy = arrayFlags;
         
-        if (flagsCopy.size() > 0)
-            flagsCopy.pop_back();
+        // if (flagsCopy.size() > 0)
+            // flagsCopy.pop_back();
 
         return rs_type_info{type_id, array_count - 1, arrIndInf.first, arrIndInf.second, generic, generic_id, otherTypes, flagsCopy};
     }
@@ -113,26 +122,27 @@ struct rs_type_info
     // this function returns whether the entire array type is optional.
     inline bool isFinallyOptional() const
     {
-        return (array_count > 0 && arrayFlags.back().first);
+        if (array_count > 0)
+            return arrayFlags.back().first;
+        return optional;
     }
     inline bool equals(const rs_type_info& other) const
     {
         const bool aeq = array_count == other.array_count && compareArrayFlags(other);
+        // TODO: needs redo for when references are implemented
+        const bool finallyOptional      = isFinallyOptional();
+        const bool otherFinallyOptional = other.isFinallyOptional();
 
-        return ((generic && !other.generic)
-            ||  (generic && generic_id == other.generic_id))
-            || (other.type_id == RS_NULL_KW_ID && ((optional && array_count == 0) || isFinallyOptional())) // for null comparisons
-            || (other.type_id == type_id && aeq && other.optional == optional && other.strict == strict)
+        const bool meq = (!finallyOptional && !otherFinallyOptional) || (finallyOptional && !other.reference);
+
+        return (((generic && !other.generic) && meq)
+            ||  (generic && generic_id == other.generic_id && meq))
+            || (other.type_id == RS_NULL_KW_ID && ((optional && array_count == 0) || finallyOptional)) // for null comparisons
+            || (other.type_id == type_id && aeq && other.optional == optional && other.reference == reference)
             || canConvertTo(other);
     }
     inline bool equals(int32_t type) const
     {
-        // int? -> int? : yes
-        // int -> int? : yes
-        // int -> int : yes
-        // int? -> int : no
-        // int -> int!
-
         return (type == RS_NULL_KW_ID && ((optional && array_count == 0) || isFinallyOptional())) // for null comparisons
             || (generic && array_count == 0)
             || (type == type_id && array_count == 0);
@@ -142,7 +152,7 @@ struct rs_type_info
         return !generic &&
                other.type_id == type_id         &&
                other.array_count == array_count &&
-               typeDecoratorsEqualOrConvertable({optional, strict}, {other.optional, other.strict});
+               typeDecoratorsEqualOrConvertable({isFinallyOptional(), reference}, {other.isFinallyOptional(), other.reference});
     }
     inline bool operator==(const rs_type_info& rhs) const
     { return equals(rhs); }
@@ -156,18 +166,26 @@ struct rs_type_info
         if (info.generic && info.generic_id >= 0 && info.generic_id < (int)generics.size())
         {
             const rs_type_info& t = generics[info.generic_id];
-            info.type_id = t.type_id;
-            // maybe needs something added here
-
-            if (_explicit)
-            {
-                info.array_count += t.array_count;
-                info.arrayFlags.insert(info.arrayFlags.begin(), t.arrayFlags.begin(), t.arrayFlags.end());
-            }
+            info.assignType(t, _explicit);
 
         }
-        for (auto& other : info.otherTypes)
-            resolveGenericsIn(other, generics);
+        // for (auto& other : info.otherTypes)
+        //     resolveGenericsIn(other, generics);
+    }
+    inline void assignType(const rs_type_info& t, [[maybe_unused]] bool _explicit = true)
+    {
+        if (!_explicit && t.array_count > 0)
+        {
+            *this = t.element_type();
+            return;
+        }
+        array_count += t.array_count;
+        arrayFlags.insert(arrayFlags.begin(), t.arrayFlags.begin(), t.arrayFlags.end());
+        type_id = t.type_id;
+        // optional = t.optional;   - optionals should be equal
+        // reference = t.reference; - reference should be inferred
+        generic = t.generic;
+        generic_id = t.generic_id;
     }
 };
 
@@ -193,7 +211,7 @@ namespace std {
             hash_combine(h, type.type_id);
             hash_combine(h, type.array_count);
             hash_combine(h, type.optional);
-            hash_combine(h, type.strict);
+            hash_combine(h, type.reference);
             hash_combine(h, type.generic);
             hash_combine(h, type.generic_id);
             for (const auto& other : type.otherTypes) {

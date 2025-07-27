@@ -47,7 +47,7 @@ struct rs_error
              _Args&&...         _variables) :
                     trace(_trace),
                     message(std::vformat(
-                        std::string_view(_message),
+                        std::string_view(color_format(_message, TYPE_HIGHLIGHT_COLOR, ERROR_COLOR)),
                         std::make_format_args(static_cast<const std::remove_reference_t<_Args>&>(_variables)...)
                     )),
                     fName(_fName),
@@ -63,7 +63,7 @@ struct rs_error
             _Args&&...         _variables) :
                trace{0, std::make_shared<size_t>(_raw.at), _raw.line, _raw.caret, _raw.nlindex, _raw.start},
                message(std::vformat(
-                        std::string_view(_message),
+                        std::string_view(color_format(_message, TYPE_HIGHLIGHT_COLOR, ERROR_COLOR)),
                         std::make_format_args(static_cast<const std::remove_reference_t<_Args>&>(_variables)...)
                     )),
                fName(_fName),
@@ -80,7 +80,7 @@ struct rs_error
              _Args&&...         _variables) :
                     trace(_trace),
                     message(std::vformat(
-                        std::string_view(_message),
+                        std::string_view(color_format(_message, TYPE_HIGHLIGHT_COLOR, ERROR_COLOR)),
                         std::make_format_args(static_cast<const std::remove_reference_t<_Args>&>(_variables)...)
                     )),
                     fName(_fName),
@@ -98,7 +98,7 @@ struct rs_error
              _Args&&...         _variables) :
                     trace{0, std::make_shared<size_t>(_raw.at), _raw.line, _raw.caret, _raw.nlindex, _raw.start},
                     message(std::vformat(
-                        std::string_view(_message),
+                        std::string_view(color_format(_message, TYPE_HIGHLIGHT_COLOR, ERROR_COLOR)),
                         std::make_format_args(static_cast<const std::remove_reference_t<_Args>&>(_variables)...)
                     )),
                     fName(_fName),
@@ -125,5 +125,5 @@ private:
     }
 };
 
-std::string syntaxHighlight(const std::string& s, const std::string col = ERROR_RESET);
+std::string syntaxHighlight(const std::string& s, const std::string col = COLOR_RESET);
 void printerr(rs_error&, std::vector<std::string> = {});

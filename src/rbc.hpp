@@ -19,6 +19,7 @@
 #include "inb.hpp"
 
 #include "types/project_fragment.hpp"
+#include "types/rs_var_access_path.hpp"
 
 #include "type_info.hpp"
 #include "types.hpp"
@@ -65,6 +66,7 @@ struct rbc_function
 {
     std::string name;
     int scope = 0;
+    size_t id = 0;
     std::unordered_map<std::string, rbc_func_var_t> localVariables;
     std::vector<std::shared_ptr<rs_variable>> parameters;
     std::shared_ptr<rbc_function_generics> generics;
@@ -85,9 +87,11 @@ struct rbc_function
     std::string getGenericsHashStr();
     std::string toStr();
     std::string toSignatureStr();
+    std::string fullName();
     std::string toHumanStr();
+    function_locator locator();
     rbc_function(const std::string& _name) : name(_name)
-    {} 
+    {}
     rbc_function(const rbc_function& other, const std::vector<rs_type_info>& resolvedGenerics);
 
 };
@@ -146,6 +150,13 @@ public:
         // Other containers default-initialize themselves
     }
 };
+struct rbc_program_symbols_snapshot
+{
+    std::vector<std::shared_ptr<rs_variable>> variables;
+
+    iterable_stack<std::shared_ptr<rbc_function>> functionStack;
+    iterable_stack<std::shared_ptr<rs_module>> moduleStack;
+};
 
 namespace rbc_commands
 {
@@ -159,8 +170,8 @@ namespace rbc_commands
     {
         rbc_command create(std::shared_ptr<rs_variable> v, rbc_value val);
         rbc_command create(std::shared_ptr<rs_variable> v);
-        rbc_command storeReturn(std::shared_ptr<rs_variable> v);
-        rbc_command set(std::shared_ptr<rs_variable> v, rbc_value val);
+        rbc_command storeReturn(rbc_value v);
+        rbc_command set(rbc_value v, rbc_value val);
     };
 };
 
@@ -175,10 +186,11 @@ namespace conversion
         using _This = CommandFactory &;
 
     private:
-        bool _nonConditionalFlag = false;
-
-        bool _useBuffer = false;
-
+        // TODO: move to flag_set struct in util
+        bool  _nonConditionalFlag = false;
+        bool  _useBuffer          = false;
+        bool  _inFunction         = false;
+        iterable_stack<std::shared_ptr<rs_stack_frame>> stackFrames;
         mccmdlist commands;
         mc_program &context;
         rbc_program &rbc_compiler;
@@ -195,6 +207,12 @@ namespace conversion
 
         CommandFactory(mc_program &_context, rbc_program &_rbc_compiler) : context(_context), rbc_compiler(_rbc_compiler)
         {
+            stackFrames.push(std::make_shared<rs_stack_frame>(0));
+        }
+        
+        inline std::shared_ptr<rs_stack_frame>& getUsingStackFrame()
+        {
+            return stackFrames.top();
         }
         inline void add(mc_command &c)
         {
@@ -254,6 +272,22 @@ namespace conversion
 
             commands.insert(commands.end(), _buffer->begin(), _buffer->end());
         }
+        inline void enterFunction()
+        {
+            context.saveFrame();
+        }
+        inline void exitFunction()
+        {
+            context.revertToPreviousFrame();
+        }
+        inline void enterTopOrderFunction()
+        {
+            _inFunction = true;
+        }
+        inline void exitTopOrderFunction()
+        {
+            _inFunction = false;
+        }
 #pragma endregion buffer
         void make(mc_command &in);
 
@@ -267,8 +301,11 @@ namespace conversion
         _This math(rbc_value &lhs, rbc_value &rhs, bst_operation_type t);
         _This pushParameter(rbc_value &val);
         _This popParameter();
+        _This deleteVariable(rs_variable& var);
         _This invoke(const std::string &module, rbc_function &func);
         _This Return(bool val);
+        _This prependStackFrame();
+        _This deleteCurrentStackFrame();
         std::shared_ptr<comparison_register> compareNull(const bool scoreboard, const std::string &where, const bool eq);
         std::shared_ptr<comparison_register> compare(const std::string &locationType, const std::string &lhs,
                                                      const bool eq,
@@ -277,7 +314,7 @@ namespace conversion
 
         std::shared_ptr<comparison_register> getFreeComparisonRegister();
         static mc_command makeCopyStorage(const std::string &dest, const std::string &src);
-        static mc_command getVariableValue(rs_variable &var);
+        mc_command getVariableValue(rs_variable &var);
         static mc_command getRegisterValue(rbc_register &reg);
         static mc_command makeAppendStorage(const std::string &dest, const std::string &_const);
 
@@ -287,7 +324,11 @@ namespace conversion
 
         _This setRegisterValue(rbc_register &reg, rbc_value &c);
         _This setVariableValue(rs_variable &var, rbc_value &val);
+        _This setVariableValue(rs_variable& var, rs_list& list, bool createVar = false);
+        _This setVariableValue(rs_var_access_path &var, rbc_value &val);
+
+        int setVariableCompilerID(rs_variable& var, int by = 1);
     };
 }
 
-mc_program tomc(rbc_program &, const std::string &, std::string &);
+mc_program tomc(rbc_program &, const std::string &, std::string &, bool = false);

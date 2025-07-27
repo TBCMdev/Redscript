@@ -16,9 +16,6 @@ namespace inb_impls
     void msg(INB_IMPL_PARAMETERS)
     {
 
-        (void) program; // todo remove
-
-
         // TODO: tellraw
         rbc_value& selector = parameters.at(0);
         if (selector.index() != 0)
@@ -48,7 +45,19 @@ namespace inb_impls
             case 2:
             {
                 rs_variable& var = *std::get<2>(val);
-                factory.create_and_push(MC_TELLRAW_CMD_ID, MC_TELLRAW_VARIABLE(_const.val, var.comp_info.varIndex));
+                factory.create_and_push(MC_TELLRAW_CMD_ID, MC_TELLRAW_VARIABLE(_const.val, var));
+                break;
+            }
+            case 4:
+            {
+                IMPL_ERROR("msg() does not allow raw list constants to be printed. Store the constant in a variable first.");
+                break;
+            }
+            case 6:
+            {
+                rs_var_access_path& path = std::get<6>(val);
+
+                factory.create_and_push(MC_TELLRAW_CMD_ID, MC_TELLRAW_VARIABLE_PATH(_const.val, path.toCompiledPath()));
                 break;
             }
             default:
@@ -58,8 +67,6 @@ namespace inb_impls
     }
     void kill(INB_IMPL_PARAMETERS)
     {
-        (void) program; // todo remove
-
         rbc_value& selector = parameters.at(0);
         if (selector.index() != 0)
         {
@@ -74,10 +81,15 @@ namespace inb_impls
     }
     void compile_assert(INB_IMPL_PARAMETERS)
     {
-        (void) program; // todo remove
-        (void) factory;
-        (void) parameters;
-
         err = "Thise inbuilt function is not implemented yet.";
+    }
+
+    namespace debug
+    {
+        void print(INB_IMPL_PARAMETERS)
+        {
+            // todo
+            msg(program, factory, parameters, generics, err);
+        }
     }
 }

@@ -67,7 +67,11 @@ struct comparison_register
 };
 struct mc_program
 {
-    uint varStackCount = 0;
+    uint varStackCount   = 0;
+    uint paramStackCount = 0;
+
+
+    iterable_stack<std::pair<uint, uint>> frames;
     iterable_stack<std::pair<int, std::shared_ptr<comparison_register>>> blocks;
     std::vector<std::shared_ptr<comparison_register>> comparisonRegisters;
     std::vector<mc_function> functions;
@@ -76,8 +80,11 @@ struct mc_program
     std::vector<rs_variable*> stack;
     mc_function globalFunction;
 
-    std::shared_ptr<comparison_register> getFreeComparisonRegister();
+
+    void saveFrame();
+    void revertToPreviousFrame();
     
+    std::shared_ptr<comparison_register> getFreeComparisonRegister();
 };
 const std::filesystem::path makeDatapack(const std::filesystem::path&);
 void writemc(mc_program&, std::string, const std::string&, std::string&);

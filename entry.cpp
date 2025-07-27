@@ -101,14 +101,13 @@ int main(int argc, char* const* argv)
     {
         INFO("Token Count: %zu", list.size());
         for(auto& tok : list)
-        {
             std::cout << tok.str() << '\n';
-        }
     }
     
     INFO("Compiling...");
 
     rbc_parser parser(fragments);
+    RS_PARSER_INSTANCE = &parser;
 
     try{
         do
@@ -121,7 +120,8 @@ int main(int argc, char* const* argv)
         std::vector<std::string> notes;
         if (parser.program.currentFunction && parser.program.currentFunction->assignedGenerics)
         {
-            notes.push_back(std::format("In instantiation of generic template function {}<{}>", parser.program.currentFunction->name, *parser.program.currentFunction->assignedGenerics));
+            notes.push_back(std::format("In instantiation of generic template function " TYPE_HIGHLIGHT_COLOR "{}<{}>" COLOR_RESET,
+                                            parser.program.currentFunction->name, *parser.program.currentFunction->assignedGenerics));
         }
         printerr(*err, notes);
         ERROR("Program compilation terminated.");
@@ -158,7 +158,7 @@ int main(int argc, char* const* argv)
     toLower(outFolderLower);
 
     // mc_program endProgram = tomc(bytecode, removeSpecialCharacters(outFolderLower), conversionError);
-    mc_program endProgram = tomc(parser.program, "redscript", conversionError);
+    mc_program endProgram = tomc(parser.program, "redscript", conversionError, debug);
 
     if (!conversionError.empty())
     {

@@ -174,6 +174,9 @@ const std::filesystem::path makeDatapack(const std::filesystem::path &path)
     const std::filesystem::path funcDir = path / "data" / RS_STORAGE_NAME / "function";
     std::filesystem::create_directories(funcDir);
 
+    for(const auto& entry : std::filesystem::directory_iterator(funcDir))
+        std::filesystem::remove_all(entry);
+
     std::ofstream mcMetaPack(path / MC_MCMETA_FILE_NAME);
 
     if (!RS_CONFIG.exists("versionid"))
@@ -195,6 +198,21 @@ std::shared_ptr<comparison_register> mc_program::getFreeComparisonRegister()
             return reg;
     }
     return nullptr;
+}
+void                                mc_program::saveFrame()
+{
+    frames.push({varStackCount, paramStackCount});
+
+    varStackCount = 0;
+    paramStackCount = 0;
+}
+void                                mc_program::revertToPreviousFrame()
+{
+    auto& pair = frames.top();
+
+    varStackCount = pair.first;
+    paramStackCount = pair.second;
+    frames.pop();
 }
 void writemc(mc_program &program, std::string name, const std::string &path, std::string &err)
 {

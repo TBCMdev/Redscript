@@ -7,26 +7,37 @@
 #define PAD(x) PADL(x) " "
 #define INS(x) +(x)+
 #define INS_L(x) +(x)
+#define INS_R(x) (x)+
 #define STR(x) std::to_string(x)
 #define ARR_AT(arr, i) arr "[" INS(i) "]"
 
 #define MC_DATA(cmd, where) #cmd SEP RS_PROGRAM_STORAGE SEP where
 #pragma region variables
 
-#define MC_VARIABLE_VALUE(id) ARR_AT(RS_PROGRAM_VARIABLES, STR(id)) ".value"
-#define MC_VARIABLE_TYPE(id) ARR_AT(RS_PROGRAM_VARIABLES, STR(id)) ".type"
-#define MC_VARIABLE_VALUE_FULL(id) RS_PROGRAM_STORAGE SEP MC_VARIABLE_VALUE(id)
-#define MC_VARIABLE_TYPE_FULL(id) RS_PROGRAM_STORAGE SEP MC_VARIABLE_TYPE(id)
-#define MC_GET_VARIABLE_VALUE(id) MC_DATA(get storage, MC_VARIABLE_VALUE(id))
+#define RS_PROGRAM_VARIABLES_SPECIFIC(stackID) RS_PROGRAM_STACK "[" INS(STR(stackID)) "]." RS_PROGRAM_VARIABLES_RAW
+#define RS_PROGRAM_PARAMETERS_SPECIFIC(stackID) RS_PROGRAM_STACK "[" INS(STR(stackID)) "]." RS_PROGRAM_PARAMETERS_RAW
+#define RS_STORAGE_LOCATOR_RAW(isParam, stackFrame) (std::string((isParam ? RS_PROGRAM_PARAMETERS_SPECIFIC(stackFrame) : RS_PROGRAM_VARIABLES_SPECIFIC(stackFrame))))
+
+#define RS_STORAGE_LOCATOR(var) RS_STORAGE_LOCATOR_RAW((var).comp_info.isParameter, (var).comp_info.belongingStackFrame->id)
+
+#define VAR_ID(x) STR(x.comp_info.varIndex)
+
+
+#define MC_VARIABLE_VALUE(var) ARR_AT(INS_R(RS_STORAGE_LOCATOR(var)), VAR_ID(var)) ".value"
+#define MC_VARIABLE_TYPE(var) ARR_AT(INS_R(RS_STORAGE_LOCATOR(var)), VAR_ID(var)) ".type"
+#define MC_VARIABLE_VALUE_FULL(var) RS_PROGRAM_STORAGE SEP INS_L(MC_VARIABLE_VALUE(var))
+#define MC_VARIABLE_TYPE_FULL(var) RS_PROGRAM_STORAGE SEP MC_VARIABLE_TYPE(var)
+#define MC_GET_VARIABLE_VALUE(var) MC_DATA(get storage, INS_L(MC_VARIABLE_VALUE(var)))
 
 #define MC_VARIABLE_JSON(data, scope, type) "{\"value\":" data ",\"scope\":" INS(scope) ",\"type\":" INS(type) "}"
 #define MC_VARIABLE_JSON_DEFAULT(scope, type) MC_VARIABLE_JSON("0", scope, type)
 #define MC_VARIABLE_JSON_VAL(data, scope, type) MC_VARIABLE_JSON(INS(data), scope, type)
-#define MC_VARIABLE_CREATE_DEF(scope, type, ...) MC_DATA(modify storage, RS_PROGRAM_VARIABLES) \
+#define MC_VARIABLE_CREATE_DEF(scope, type, isParameter, stackFrame, ...) MC_DATA(modify storage, INS(RS_STORAGE_LOCATOR_RAW(isParameter, stackFrame))) \
                                                  PADL(set) PAD(value) \
                                                  MC_VARIABLE_JSON_DEFAULT(scope, type) \
                                                  __VA_ARGS__
-#define MC_VARIABLE_SET_CONST(id, v) PADR(modify storage) RS_PROGRAM_STORAGE SEP ARR_AT(RS_PROGRAM_VARIABLES, STR(id)) PADR(.value set value) INS_L(v)
+#define MC_VARIABLE_SET_CONST(var, v) PADR(modify storage) RS_PROGRAM_STORAGE SEP ARR_AT(INS(RS_STORAGE_LOCATOR(var)), VAR_ID(var)) PADR(.value set value) INS_L(v)
+#define MC_VARIABLE_PATH_SET_CONST(path, v) PADR(modify storage) RS_PROGRAM_STORAGE SEP INS(path) PADR(set value) INS_L(v)
 #pragma endregion variables
 
 #pragma region registers
@@ -62,7 +73,8 @@
 // DONT USE: not finished
 #define MC_TELLRAW_OPERABLE_REGISTER(selector, id) '@' INS(selector) SEP "[{\"score\":{" MC_OPERABLE_REG(id) ".value}, {\"storage\":\"" RS_PROGRAM_DATA "\"}"
 // for tellraw in particular a function needs to be made. Coming in next version.
-#define MC_TELLRAW_VARIABLE(selector, id) '@' INS(selector) SEP "[{\"nbt\":\"" ARR_AT(RS_PROGRAM_VARIABLES, STR(id))".value\", \"storage\":\"" RS_PROGRAM_STORAGE "\"}]"
+#define MC_TELLRAW_VARIABLE(selector, var) '@' INS(selector) SEP "[{\"nbt\":\"" ARR_AT(INS(RS_STORAGE_LOCATOR(var)), VAR_ID(var)) ".value\", \"storage\":\"" RS_PROGRAM_STORAGE "\"}]"
+#define MC_TELLRAW_VARIABLE_PATH(selector, path) '@' INS(selector) SEP "[{\"nbt\":\"" INS(path) "\", \"storage\":\"" RS_PROGRAM_STORAGE "\"}]"
 #pragma endregion tellraw
 
 #pragma region mcmeta

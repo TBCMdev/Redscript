@@ -1,14 +1,19 @@
+stuff:
+	CREATE {{_x, 0, 0, 6}, name=_x, scope=1, typeinf=string, (g=0, c=0)}, (const){T=2, v=message}
+	PUSH (const){T=2, v=msg}, (const){T=2, v=__p}, (const){T=6, v=r}
+	PUSH (const){T=2, v=msg}, (const){T=2, v=__msg}, {{_x, 0, 0, 6}, name=_x, scope=1, typeinf=string, (g=0, c=0)}
+	CALL 0x5bc284636980, 0x5bc2846498a0
+	RET (const){T=1, v=1}
+testing:
+x:
+slen:
+len:
 msg:
 setattr:
-type:
 kill:
 getattr:
-CREATE {{x, 0, 0, 7}, name=x, scope=0, typeinf=int, (g=1, c=1)}, (const){T=1, v=4}
-PUSH (const){T=2, v=msg}, (const){T=2, v=__p}, (const){T=6, v=r}
-PUSH (const){T=2, v=msg}, (const){T=2, v=__msg}, {{x, 0, 0, 7}, name=x, scope=0, typeinf=int, (g=1, c=1)}
-CALL 
-CREATE {{mylist, 0, 0, 6}, name=mylist, scope=0, typeinf=int[], (g=1, c=0)}, 
-CREATE {{y, 0, 0, 7}, name=y, scope=0, typeinf=int, (g=1, c=1)}, 
-PUSH (const){T=2, v=msg}, (const){T=2, v=__p}, (const){T=6, v=r}
-PUSH (const){T=2, v=msg}, (const){T=2, v=__msg}, {{y, 0, 0, 7}, name=y, scope=0, typeinf=int, (g=1, c=1)}
-CALL 
+CREATE {{n, 0, 0, 1}, name=n, scope=0, typeinf=int[]?, (g=1, c=0)}, (const){T=54, v=null}
+CREATE {{iarray, 0, 0, 6}, name=iarray, scope=0, typeinf=int[], (g=1, c=0)}, [(const){T=1, v=4},(const){T=1, v=3},(const){T=1, v=2}]
+PUSH (const){T=2, v=testing}, (const){T=2, v=i1}, {{n, 0, 0, 1}, name=n, scope=0, typeinf=int[]?, (g=1, c=0)}
+PUSH (const){T=2, v=testing}, (const){T=2, v=i2}, iarray[0]
+CALL 0x5bc284642d40, 0x5bc284648e80

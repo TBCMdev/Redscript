@@ -83,7 +83,8 @@ struct rbc_parser
     #define RS_PARSER_PARAMETER_USE_CASE 3
     // verifies t == val or t can convert to val, throws an error otherwise
     // use case is used to give accurate descriptions to the errors.
-    bool         typeverify    (const rs_type_info& t, rbc_value& val, int useCase);
+    void typeverify    (const rs_type_info& t, rbc_value& val, int useCase);
+    rs_type_info typeinfer     (const rbc_value& v);
     // parses a type
     rs_type_info typeparse     ();
     rs_var_access_path parse_var_path_access(std::shared_ptr<rs_variable>& var);
@@ -92,16 +93,18 @@ struct rbc_parser
     bool         callparse     (std::string& name,
                                 bool needsTermination = true,
                                 std::shared_ptr<rs_module> fromModule = nullptr,
-                                std::vector<rs_type_info>* genericTypes = nullptr);
+                                rs_type_info* expectedReturnType = nullptr);
     std::shared_ptr<rbc_function_generics> 
                  genericsparse ();
+    std::vector<rs_type_info>
+                 generics_insersion_parse ();
     std::shared_ptr<rs_variable>
                  varparse      (token& name, bool needsTermination = true, bool parameter = false, bool obj = false, bool isConst = false);
 
     std::shared_ptr<rs_object>
                  objparse      (std::string& name);
 
-    bool parsemoduleusage      (std::shared_ptr<rs_module> currentModule);
+    bool parsemoduleusage      (std::shared_ptr<rs_module> currentModule, rs_type_info* expectedReturnType = nullptr);
     
     std::shared_ptr<rbc_function>
         instantiateGenericFunction (const std::vector<rs_type_info>& generics, std::shared_ptr<rbc_function> function);

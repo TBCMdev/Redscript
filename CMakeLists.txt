@@ -37,6 +37,7 @@ add_library(redscript_lib
 	src/util.cpp
 	src/parser.cpp
 	src/bst.cpp
+	src/type_info.cpp
 )
 
 add_executable(rscript entry.cpp)

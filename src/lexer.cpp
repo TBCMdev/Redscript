@@ -59,6 +59,7 @@ token_list tlex(const std::string &fName, std::string &content, rs_error *err = 
         return c;
     };
     char ch = content.at(_At);
+    char next;
     do
     {
         if (ch == '\n')
@@ -81,7 +82,8 @@ token_list tlex(const std::string &fName, std::string &content, rs_error *err = 
 
             tokens.push_back(token{content.substr(start, _At - start), token_type::STRING_LITERAL, RS_STRING_KW_ID, trace, start});
         }
-        else if (std::isdigit(ch))
+        else if (std::isdigit(ch) || (ch == '-' && _At + 1 < S &&
+                                        std::isdigit((next = content.at(_At + 1)))) )
         {
             long start = _At;
             bool decimal = false;
@@ -109,7 +111,7 @@ token_list tlex(const std::string &fName, std::string &content, rs_error *err = 
         {
             bool isSelectorLiteral = ch == '@';
             long start = isSelectorLiteral ? _At + 1 : _At;
-            while ((ch = adv()) && (std::isalpha(ch) || ch == '_'));
+            while ((ch = adv()) && (std::isalnum(ch) || ch == '_'));
 
             token t{content.substr(start, _At - start),
                 isSelectorLiteral ? token_type::SELECTOR_LITERAL : token_type::WORD,

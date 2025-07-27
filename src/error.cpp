@@ -39,7 +39,7 @@ void printerr(rs_error& error, std::vector<std::string> notes)
     ERROR("[RS:%d] %s", error.trace.ec, error.message.c_str());
 
     for (std::string& note : notes)
-        std::cout << ERROR_NOTE_COLOR << "  [NOTE] " << note << ERROR_RESET "\n";
+        std::cout << ERROR_NOTE_COLOR << "  [NOTE] " << note << COLOR_RESET "\n";
     
     if (error.callTrace && error.callTrace->size() > 0)
     {
@@ -53,7 +53,7 @@ void printerr(rs_error& error, std::vector<std::string> notes)
             at --;
         }
 
-        std::cout << ERROR_RESET;
+        std::cout << COLOR_RESET;
     }
 
     std::cout << "\n\t -- " << fileStr.str() << " -- \n";
@@ -80,7 +80,7 @@ void printerr(rs_error& error, std::vector<std::string> notes)
     for(int i = 0; i < 3 - lineLength; i++) paddl.push_back(' ');
     for(size_t i = 0; i < 6 - lineLength - paddl.length(); i++) paddr.push_back(' ');
 
-    std::cout << paddl << error.trace.line << paddr << "| " << syntaxHighlight(error.line) << "\n      | " << ERROR_COLOR << errorHighlight.str() << ERROR_RESET << '\n';
+    std::cout << paddl << error.trace.line << paddr << "| " << syntaxHighlight(error.line) << "\n      | " << ERROR_COLOR << errorHighlight.str() << COLOR_RESET << '\n';
     for(int i = 0; i < RS_ERROR_LINE_PADDING - 1; i++)
         std::cout << "      |\n";
 }

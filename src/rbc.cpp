@@ -36,17 +36,17 @@ namespace rbc_commands
     }
     namespace variables
     {
-        rbc_command set(std::shared_ptr<rs_variable> var, rbc_value val)
+        rbc_command set(rbc_value var, rbc_value val)
         {
-            return rbc_command(rbc_instruction::SAVE, rbc_value(var), val);
+            return rbc_command(rbc_instruction::SAVE, var, val);
         }
         rbc_command create(std::shared_ptr<rs_variable> var, rbc_value val)
         {
             return rbc_command(rbc_instruction::CREATE, rbc_value(var), val);
         }
-        rbc_command storeReturn(std::shared_ptr<rs_variable> var)
+        rbc_command storeReturn(rbc_value var)
         {
-            return rbc_command(rbc_instruction::SAVERET, rbc_value(var));
+            return rbc_command(rbc_instruction::SAVERET, var);
         }
         rbc_command create(std::shared_ptr<rs_variable> var)
         {
@@ -84,6 +84,7 @@ rbc_function::rbc_function(const rbc_function& other, const std::vector<rs_type_
     for (const auto& [name, varPair] : other.localVariables) {
         const auto& [varPtr, isCaptured] = varPair;
         auto newVar = std::make_shared<rs_variable>(*varPtr);
+
         rs_type_info::resolveGenericsIn(newVar->type_info, resolvedGenerics);
         localVariables[name] = std::make_pair(newVar, isCaptured);
     }
@@ -186,10 +187,18 @@ rs_variable* rbc_function::getNthParameter(size_t p)
         return parameters.at(p).get();
     return nullptr;
 }
+std::string rbc_function::fullName()
+{
+    std::string ret;
+    for(const std::string& item : modulePath)
+        ret += item + "::";
+
+    return ret + name;
+}
 std::string rbc_function::toHumanStr()
 {
     std::stringstream stream;
-    stream << name << ':';
+    stream << fullName() << ':';
     for(auto& instruction : instructions)
     {
         stream << '\n';
@@ -198,11 +207,19 @@ std::string rbc_function::toHumanStr()
 
     return stream.str();
 }
+function_locator rbc_function::locator()
+{
+    function_locator loc(modulePath);
+
+    loc.path.push_back(name);
+
+    return loc;
+}
 std::string rbc_function::toSignatureStr()
 {
     std::stringstream stream;
 
-    stream << name << '(';
+    stream <<fullName() << '(';
 
     const size_t S = parameters.size();
 
@@ -237,7 +254,16 @@ std::string rbc_command::tostr()
                 stream << ", " << std::get<2>(*p)->tostr();
                 break;
             case 3:
-                stream << " " << std::get<3>(*p)->tostr();
+                stream << ", " << std::get<3>(*p)->tostr();
+                break;
+            case 4:
+                stream << ", " << std::get<4>(*p)->tostr();
+                break;
+            case 5:
+                stream << ", " << std::get<5>(*p).get();
+                break;
+            case 6:
+                stream << ", " << std::get<6>(*p).toPath();
                 break;
         }
     }
@@ -254,6 +280,9 @@ std::string rbc_command::toHumanStr()
             break;
         case rbc_instruction::CREATE:
             stream << "CREATE ";
+            break;
+        case rbc_instruction::SAVERET:
+            stream << "SAVERET ";
             break;
         case rbc_instruction::DEL:
             stream << "DEL ";
@@ -326,6 +355,15 @@ std::string rbc_command::toHumanStr()
             case 3:
                 stream << std::get<3>(*p)->tostr();
                 break;
+            case 4:
+                stream << std::get<4>(*p)->tostr();
+                break;
+            case 5:
+                stream << std::get<5>(*p).get();
+                break;
+            case 6:
+                stream << std::get<6>(*p).toPath();
+                break;
         }
         c++;
     }
@@ -333,6 +371,8 @@ std::string rbc_command::toHumanStr()
 }
 std::shared_ptr<rs_variable> rbc_program::getVariable(const std::string& name)
 {
+
+    // TODO ALLOW FOR DIFFERENT SCOPED VARS WITH SAME NAME
     auto result = std::find_if(globalVariables.begin(), globalVariables.end(),
     [&](std::shared_ptr<rs_variable>& var)
         {return var->name == name;}
@@ -407,10 +447,8 @@ sharedt<rbc_register> rbc_program::makeRegister(bool operable, bool vacant)
 void preprocess(token_list& tokens, std::string fName, std::string& content, rs_error* err, fragment_ptr_deque& fragments,
                 std::shared_ptr<std::vector<std::filesystem::path>> visited)
 {
-    long long       _At = 0;
-    const long long S   = tokens.size();
+    size_t       _At = 0;
     std::filesystem::path rootPath = std::filesystem::absolute(fName);
-
     if(!visited)
         visited = std::make_shared<std::vector<std::filesystem::path>>();
 
@@ -422,7 +460,8 @@ void preprocess(token_list& tokens, std::string fName, std::string& content, rs_
         {
             case token_type::KW_USE:
             {
-                if (_At + 1 >= S) 
+                size_t start = _At;
+                if (_At + 1 >= tokens.size()) 
                     PRE_PROCESS_ERROR(RS_SYNTAX_ERROR, "Expected file to import, not EOF.");
                 
                 token& path = tokens.at(++_At);
@@ -451,8 +490,13 @@ void preprocess(token_list& tokens, std::string fName, std::string& content, rs_
                 if (path.type != token_type::WORD)
                     PRE_PROCESS_ERROR(RS_SYNTAX_ERROR, "Expected file name.");
 
-                if (_At + 1 >= S || tokens.at(++_At).type != token_type::LINE_END)
+                if (_At + 1 >= tokens.size() || tokens.at(++_At).type != token_type::LINE_END)
                     PRE_PROCESS_ERROR(RS_SYNTAX_ERROR, "Missing semicolon.");
+
+
+                tokens.erase(tokens.begin() + start, tokens.begin() + _At);
+                _At -= _At - start;
+
                 std::string filePathStr = filePath.filename().string();
                 token_list fileTokens = tlex(filePathStr, fileContent, err);
 
@@ -460,26 +504,13 @@ void preprocess(token_list& tokens, std::string fName, std::string& content, rs_
 
                 if(err->trace.ec)
                     return;
-                // OLD: TODO REMOVE
-                // const size_t offset = fileContent.length() + 1; // + 1 for \n
-                // for(size_t i = 0; i < tokens.size(); i++)
-                // {
-                //     raw_trace_info& trace = tokens.at(i).trace;
-
-                //     trace.at += offset;
-                //     trace.nlindex += offset;
-                // }
-                // tokens.insert(tokens.begin(), fileTokens.begin(), fileTokens.end());
-
-                // content = fileContent + '\n' + content;
-                // _At += fileTokens.size();
 
                 break;
             }
             default:
                 break;
         }
-    } while(++_At < S);
+    } while(++_At < tokens.size());
 
     fragments.push_back(std::make_shared<project_fragment>(fName, content, tokens));
 
@@ -487,17 +518,22 @@ void preprocess(token_list& tokens, std::string fName, std::string& content, rs_
 #define RS_ASSERTC(C, m) if (!(C)) {err=m;return {};}
 #define RS_ASSERT_SIZE(C) RS_ASSERTC(C, "Invalid byte code parameter count. This error is a bug, flag it on github.")
 #define RS_ASSERT_SUCCESS if (!err.empty()) {return mcprogram;}
-mc_program tomc(rbc_program& program, const std::string& moduleName, std::string& err)
+mc_program tomc(rbc_program& program, const std::string& moduleName, std::string& err, bool debug)
 {
     mc_program mcprogram;
     conversion::CommandFactory factory(mcprogram, program);
     
-    auto parseFunction = [&](std::vector<rbc_command>& instructions) -> mccmdlist
+    auto parseFunction = [&](rbc_function* fun, std::vector<rbc_command>& instructions) -> mccmdlist
     {
+        if (instructions.size() == 0 && fun)
+            WARN("Empty function %s should be removed.", fun->fullName().c_str());
+        factory.enterFunction();
         for(size_t i = 0; i < instructions.size(); i++)
         {
             auto& instruction = instructions.at(i);
             const size_t size = instruction.parameters.size();
+            if (debug)
+                std::cout << instruction.toHumanStr() << '\n';
 
             switch(instruction.type)
             {
@@ -533,6 +569,12 @@ mc_program tomc(rbc_program& program, const std::string& moduleName, std::string
                         case 2:
                         {
                             factory.setVariableValue(*std::get<sharedt<rs_variable>>(reg), *instruction.parameters.at(1));
+                            break;
+                        }
+                        case 6:
+                        {
+                            factory.setVariableValue(std::get<rs_var_access_path>(reg), *instruction.parameters.at(1));
+                            break;
                         }
                     }
                     break;
@@ -574,12 +616,13 @@ mc_program tomc(rbc_program& program, const std::string& moduleName, std::string
                 {
                     RS_ASSERT_SIZE(size > 0);
                     std::shared_ptr<rbc_function> f = nullptr;
-
+                    std::shared_ptr<std::vector<rs_type_info>> genericTypes = nullptr;
                     rbc_value& p0 = *instruction.parameters.at(0);
-                    std::string name;
+                    function_locator locator;
                     if (p0.index() == 0)
                     {
-                        name = std::get<rbc_constant>(*instruction.parameters.at(0)).val;
+                        std::string name = std::get<rbc_constant>(*instruction.parameters.at(0)).val;
+                        
                         rs_module* fromModule = nullptr;
                         if (size > 1)
                         {
@@ -591,18 +634,34 @@ mc_program tomc(rbc_program& program, const std::string& moduleName, std::string
                                 break;
                             }
                             else
+                            {
+                                auto pathCopy = fromModule->modulePath;
+
+                                pathCopy.push_back(name);
+
+                                locator = pathCopy;
+
                                 f = fromModule->functions.find(name)->second;
+                            }
                         }
                         else
+                        {
+                            locator = name;
                             f = program.functions.find(name)->second;
+                        }
                     }
                     else
                     {
                         std::shared_ptr<void> func = std::get<std::shared_ptr<void>>(p0);
+                        genericTypes               = std::static_pointer_cast<std::vector<rs_type_info>>(
+                                                        std::get<std::shared_ptr<void>>(*instruction.parameters.at(1))
+                                                     );
                         f = std::static_pointer_cast<rbc_function>(func);
-                        name = f->name;
+
+                        locator = f->locator();
                     }
                     rbc_function& func = *f;
+
                     factory.disableBuffer();
                     
                     if (std::find(func.decorators.begin(), func.decorators.end(), rbc_function_decorator::CPP) != func.decorators.end())
@@ -616,7 +675,7 @@ mc_program tomc(rbc_program& program, const std::string& moduleName, std::string
                         while(--caret >= 0 && (cmd = &instructions.at(caret))->type == rbc_instruction::PUSH)
                         {
                             parameters.push_back(*cmd->parameters.at(2));
-                            mcprogram.varStackCount--;
+                            mcprogram.paramStackCount--;
                         }
                         std::vector<rbc_value> reversed;
                         reversed.reserve(parameters.size());
@@ -625,13 +684,13 @@ mc_program tomc(rbc_program& program, const std::string& moduleName, std::string
                             reversed.push_back(std::move(*it));
                         }
                         parameters = std::move(reversed);
-                        auto decl = inb_impls::INB_IMPLS_MAP.find(name);
+                        auto decl = inb_impls::INB_IMPLS_MAP.find(locator);
                         if (decl == inb_impls::INB_IMPLS_MAP.end())
                         {
-                            err = "Fatal: inbuilt (__cpp__ decl) c++ function mapping for '" + name + "' doesn't exist. This could be due to a mismatch in versions.";
+                            err = "Fatal: inbuilt (__cpp__ decl) c++ function mapping for '" + locator.str() + "' doesn't exist. This could be due to a mismatch in versions.";
                             return {};
                         }
-                        decl->second(program, factory, parameters, err);
+                        decl->second(program, factory, parameters, genericTypes.get(), err);
                         if (!err.empty())
                             return {}; // todo can printerr here!!!
                     }
@@ -640,15 +699,20 @@ mc_program tomc(rbc_program& program, const std::string& moduleName, std::string
                         // we do need the parameters at runtime! the function is not inbuilt
                         factory.addBuffer();
                         factory.invoke(moduleName, func);
+                        factory.deleteCurrentStackFrame();
                         factory.clearBuffer();
 
                     }
-                    while (i + 1 < instructions.size() && instructions.at(i + 1).type == rbc_instruction::POP)
-                    {
-                        i++;
-                        factory.popParameter();
-                        mcprogram.varStackCount--;
-                    }
+
+                    break;
+                }
+                case rbc_instruction::DEL:
+                {
+                    WARN("Deleting variables is no longer supported.");
+                    break;
+                    // rs_variable& var = *std::get<2>(*instruction.parameters.at(0));
+
+                    // factory.deleteVariable(var);
 
                     break;
                 }
@@ -664,6 +728,9 @@ mc_program tomc(rbc_program& program, const std::string& moduleName, std::string
                         factory.enableBuffer();
                     }
 
+                    if (i == 0 || (instructions.at(i - 1).type != rbc_instruction::PUSH))
+                        factory.prependStackFrame();
+                    
                     rbc_constant funcName = std::get<0>(*instruction.parameters.at(0));
                     rbc_constant paramName = std::get<0>(*instruction.parameters.at(1));
 
@@ -685,9 +752,12 @@ mc_program tomc(rbc_program& program, const std::string& moduleName, std::string
                         func = program.functions.find(funcName.val);
                     // TODO: change to param index?
                     rs_variable* param = func->second->getParameterByName(paramName.val);
-                    // TODO: add null checks here
+                    param->comp_info.isParameter = true;
 
+                    // param->comp_info.belongingStackFrame = factory.getUsingStackFrame();
+                    // TODO: add null checks here
                     factory.createVariable(*param, *instruction.parameters.at(2));
+
                     mcprogram.stack.push_back(param);
 
                     break;
@@ -767,7 +837,7 @@ mc_program tomc(rbc_program& program, const std::string& moduleName, std::string
                             case 2:
                             {
                                 rs_variable& var = *std::get<2>(param);
-                                std::shared_ptr<comparison_register> outReg = factory.compareNull(false, MC_VARIABLE_VALUE(var.comp_info.varIndex), !invertFlag);
+                                std::shared_ptr<comparison_register> outReg = factory.compareNull(false, MC_VARIABLE_VALUE(var), !invertFlag);
                                 
                                 mcprogram.blocks.push({0, outReg});
                                 break;
@@ -825,8 +895,8 @@ mc_program tomc(rbc_program& program, const std::string& moduleName, std::string
                                 rs_variable& var  = *std::get<2>(lhs);
                                 rs_variable& var2 = *std::get<2>(rhs);
 
-                                usedRegister = factory.compare("data", RS_PROGRAM_STORAGE SEP MC_VARIABLE_VALUE(var.comp_info.varIndex), eq,
-                                                        RS_PROGRAM_STORAGE SEP MC_VARIABLE_VALUE(var2.comp_info.varIndex));
+                                usedRegister = factory.compare("data", RS_PROGRAM_STORAGE SEP INS_L(MC_VARIABLE_VALUE(var)), eq,
+                                                        RS_PROGRAM_STORAGE SEP INS_L(MC_VARIABLE_VALUE(var2)));
 
                                 break;
                             }
@@ -870,7 +940,7 @@ mc_program tomc(rbc_program& program, const std::string& moduleName, std::string
                                 factory.getRegisterValue(reg).storeResult(PADR(storage) MC_TEMP_STORAGE, "int", 1);
                             else
                                 factory.copyStorage(MC_TEMP_STORAGE, MC_NOPERABLE_REG_GET(reg.id));
-                            usedRegister = factory.compare("data", MC_VARIABLE_VALUE(var.comp_info.varIndex), eq, MC_TEMP_STORAGE);
+                            usedRegister = factory.compare("data", MC_VARIABLE_VALUE(var), eq, MC_TEMP_STORAGE);
                             goto _end;
                         }
                         }
@@ -883,7 +953,7 @@ mc_program tomc(rbc_program& program, const std::string& moduleName, std::string
                             rs_variable&  var = *res.i1;
                             rbc_constant& con = *res.i2;
                             
-                            usedRegister = factory.compare("data", MC_VARIABLE_VALUE(var.comp_info.varIndex), eq, con.val, true);
+                            usedRegister = factory.compare("data", MC_VARIABLE_VALUE(var), eq, con.val, true);
                             goto _end;
                         }
                         }
@@ -944,7 +1014,7 @@ mc_program tomc(rbc_program& program, const std::string& moduleName, std::string
                                 factory.create_and_push(MC_DATA_CMD_ID, MC_DATA(modify storage, RS_PROGRAM_RETURN_REGISTER) PAD(set value) INS_L(_const.val));
                                 
                                 // store its type info
-                                factory.create_and_push(MC_DATA_CMD_ID, MC_DATA(modify storage, RS_PROGRAM_RETURN_TYPE_REGISTER) PAD(set value) INS_L(STR(static_cast<int>(_const.val_type))));
+                                // factory.create_and_push(MC_DATA_CMD_ID, MC_DATA(modify storage, RS_PROGRAM_RETURN_TYPE_REGISTER) PAD(set value) INS_L(STR(static_cast<int>(_const.val_type))));
                                 break;
                             }
                             case 1:
@@ -953,25 +1023,22 @@ mc_program tomc(rbc_program& program, const std::string& moduleName, std::string
 
                                 factory.getRegisterValue(reg).storeResult(PADR(storage) RS_PROGRAM_STORAGE SEP RS_PROGRAM_RETURN_REGISTER);
 
-                                if (reg.operable)
-                                {
-                                    // must be int
-                                    factory.create_and_push(MC_DATA_CMD_ID, MC_DATA(modify storage, RS_PROGRAM_RETURN_TYPE_REGISTER) PAD(set value) INS_L(STR(static_cast<int>(token_type::INT_LITERAL))));
-                                }
-                                else
-                                {
-                                    // not implemented
-                                    ERROR("Cannot save type info for return value in non-operable register. Not implemented. This will cause the type function to fail for some variables.");
-                                }
-
                                 break;   
                             }
                             case 2:
                             {
                                 rs_variable& var = *std::get<2>(val);
 
-                                factory.copyStorage(RS_PROGRAM_STORAGE SEP RS_PROGRAM_RETURN_REGISTER, MC_VARIABLE_VALUE_FULL(var.comp_info.varIndex));
-                                factory.copyStorage(RS_PROGRAM_STORAGE SEP RS_PROGRAM_RETURN_TYPE_REGISTER, MC_VARIABLE_TYPE_FULL(var.comp_info.varIndex));
+                                factory.copyStorage(RS_PROGRAM_STORAGE SEP RS_PROGRAM_RETURN_REGISTER, MC_VARIABLE_VALUE_FULL(var));
+                                // factory.copyStorage(RS_PROGRAM_STORAGE SEP RS_PROGRAM_RETURN_TYPE_REGISTER, MC_VARIABLE_TYPE_FULL(var));
+                                break;
+                            }
+                            // TODO FOR LISTS
+                            case 6:
+                            {
+                                rs_var_access_path& path = std::get<6>(val);
+                                factory.copyStorage(RS_PROGRAM_STORAGE SEP RS_PROGRAM_RETURN_REGISTER, path.toCompiledPath());
+                                // factory.copyStorage(RS_PROGRAM_STORAGE SEP RS_PROGRAM_RETURN_TYPE_REGISTER, path.toCompiledPath(true));
                                 break;
                             }
                             default:
@@ -986,28 +1053,42 @@ mc_program tomc(rbc_program& program, const std::string& moduleName, std::string
                 case rbc_instruction::SAVERET:
                 {
                     RS_ASSERT_SIZE(size == 1);
+                    rbc_value& val = *instruction.parameters.at(0);
+                    switch(val.index())
+                    {
+                        case 2:
+                        {
+                            rs_variable& var = *std::get<2>(val);
 
-                    rs_variable& var = *std::get<2>(*instruction.parameters.at(0));
+                            factory.copyStorage(MC_VARIABLE_VALUE(var), RS_PROGRAM_RETURN_REGISTER);
+                            // factory.copyStorage(MC_VARIABLE_TYPE(var) , RS_PROGRAM_RETURN_TYPE_REGISTER);
+                            break;
+                        }
+                        case 6:
+                        {
+                            rs_var_access_path& path = std::get<6>(val);
 
-                    factory.copyStorage(MC_VARIABLE_VALUE(var.comp_info.varIndex), RS_PROGRAM_RETURN_REGISTER);
-                    factory.copyStorage(MC_VARIABLE_TYPE(var.comp_info.varIndex) , RS_PROGRAM_RETURN_TYPE_REGISTER);
+                            factory.copyStorage(path.toCompiledPath(), RS_PROGRAM_RETURN_REGISTER);
+                            break;
+                        }
+                    }
                     break;
                 }
                 default:
-                    WARN("Unimplemented RBC instruction found.");
+                    WARN("Unimplemented RBC instruction found. %s", instruction.toHumanStr().c_str());
                     break;
             }
         }
+        factory.exitFunction();
         mccmdlist list = factory.package();
         factory.clear();
         return list;
     };
     
     try{
-        mcprogram.globalFunction.commands = parseFunction(program.globalFunction.instructions);
+        mcprogram.globalFunction.commands = parseFunction(nullptr, program.globalFunction.instructions);
 
         std::vector<std::shared_ptr<rbc_function>> allFunctions;
-
 
         // this code is a monstrosity, but all it does it get all the functions ever created and 
         // put them in 1 neat list.
@@ -1049,8 +1130,12 @@ mc_program tomc(rbc_program& program, const std::string& moduleName, std::string
             }
         }
 
-        for(auto& function : allFunctions)
+
+        for(size_t i = 0; i < allFunctions.size(); i++)
         {
+            auto& function = allFunctions.at(i);
+            if (debug)
+                WARN("-- INSTRUCTIONS FOR FUNCTION %s ID(%zu) --", function->toSignatureStr().c_str(), i);
             auto& decorators = function->decorators;
             if 
             (
@@ -1066,7 +1151,7 @@ mc_program tomc(rbc_program& program, const std::string& moduleName, std::string
                     for (auto& entry : generics.variations)
                     {
                         mc_function f{entry.second->name,
-                              parseFunction(entry.second->instructions),
+                              parseFunction(entry.second.get(), entry.second->instructions),
                               entry.second->modulePath};
                         f.parentalHashStr = entry.second->getParentHashStr();
                         f.genericHashStr  = entry.second->getGenericsHashStr();
@@ -1077,7 +1162,7 @@ mc_program tomc(rbc_program& program, const std::string& moduleName, std::string
                 else
                 {
                     mc_function f{function->name,
-                                parseFunction(function->instructions),
+                                parseFunction(function.get(), function->instructions),
                                 function->modulePath};
                     f.parentalHashStr = function->getParentHashStr();
                     mcprogram.functions.push_back(f);
@@ -1123,7 +1208,8 @@ namespace conversion
         create_and_push(MC_RETURN_CMD_ID, val ? "1" : "0");
         return THIS;
     }
-
+    
+    // @deprecated
     CommandFactory::_This CommandFactory::pushParameter    (rbc_value& val)
     {
         switch(val.index())
@@ -1146,7 +1232,7 @@ namespace conversion
             case 2:
             {
                 rs_variable& var = *std::get<sharedt<rs_variable>>(val);
-                appendStorage(RS_PROGRAM_STORAGE SEP RS_PROGRAM_STACK, MC_VARIABLE_VALUE(var.comp_info.varIndex));
+                appendStorage(RS_PROGRAM_STORAGE SEP RS_PROGRAM_STACK, MC_VARIABLE_VALUE(var));
                 break;
             }
         }
@@ -1178,9 +1264,20 @@ namespace conversion
     }
     CommandFactory::_This CommandFactory::popParameter     ()
     {
-        rs_variable* var = context.stack.back();
-        create_and_push(MC_DATA_CMD_ID, MC_DATA(remove storage, ARR_AT(RS_PROGRAM_VARIABLES, STR(var->comp_info.varIndex))));
+        context.paramStackCount--;
+        rs_variable& var = *context.stack.back();
+        create_and_push(MC_DATA_CMD_ID, MC_DATA(remove storage, INS_L(ARR_AT(INS_R(RS_STORAGE_LOCATOR(var)), VAR_ID(var)))));
         context.stack.pop_back();
+        return THIS;
+    }
+    CommandFactory::_This CommandFactory::deleteVariable     (rs_variable& var)
+    {
+        create_and_push(MC_DATA_CMD_ID, MC_DATA(remove storage, INS_L(ARR_AT(INS_R(RS_STORAGE_LOCATOR(var)), VAR_ID(var)))));
+
+        if (var.comp_info.isParameter)
+            context.paramStackCount--;
+        else
+            context.varStackCount  --;
         return THIS;
     }
     mc_command            CommandFactory::getRegisterValue (rbc_register& reg)
@@ -1193,6 +1290,22 @@ namespace conversion
     {
         return mc_command(false, MC_DATA_CMD_ID, MC_GET_STACK_VALUE(index));
     }
+    CommandFactory::_This CommandFactory::prependStackFrame()
+    {
+        for(auto& frame : stackFrames)
+            frame->id ++;
+        stackFrames.push(std::make_shared<rs_stack_frame>(0));
+        create_and_push(MC_DATA_CMD_ID, PADR(modify storage) RS_PROGRAM_STORAGE SEP RS_PROGRAM_STACK SEP PADR(prepend value) RS_DEFAULT_STACK_FRAME);
+        return THIS;
+    }
+    CommandFactory::_This CommandFactory::deleteCurrentStackFrame()
+    {
+        stackFrames.pop();
+        for(auto& frame : stackFrames)
+            frame->id--;
+        create_and_push(MC_DATA_CMD_ID, PADR(remove storage) RS_PROGRAM_STORAGE SEP RS_PROGRAM_STACK "[0]");
+        return THIS;
+    }
     CommandFactory::_This CommandFactory::setVariableValue (rs_variable& var, rbc_value& val)
     {
         switch(val.index())
@@ -1202,11 +1315,79 @@ namespace conversion
             {
                 rbc_constant& c = std::get<0>(val);
                 c.quoteIfStr();
-                create_and_push(MC_DATA_CMD_ID, MC_VARIABLE_SET_CONST(var.comp_info.varIndex, c.val));
+                create_and_push(MC_DATA_CMD_ID, MC_VARIABLE_SET_CONST(var, c.val));
+                break;
+            }
+            case 1:
+            {
+                rbc_register& reg = *std::get<1>(val);
+                add( getRegisterValue(reg).storeResult(PADR(storage) MC_VARIABLE_VALUE_FULL(var), "int", 1) );
+                break;
+            }
+            case 2:
+            {
+                rs_variable& v = *std::get<2>(val);
+                copyStorage(MC_VARIABLE_VALUE(var), MC_VARIABLE_VALUE(v));
+                break;
+            }
+            case 4:
+            {
+                rs_list& list = *std::get<4>(val);
+
+                setVariableValue(var, list, false);
+                break;
+            }
+            case 6:
+            {
+                rs_var_access_path path = std::get<6>(val);
+                copyStorage(MC_VARIABLE_VALUE(var), path.toCompiledPath());
                 break;
             }
             default:
                 ERROR("Unsupported SAVE operation. TODO implement!");
+        }
+        return THIS;
+    }
+    CommandFactory::_This CommandFactory::setVariableValue(rs_var_access_path &varPath, rbc_value &val)
+    {
+        switch(val.index())
+        {
+            case 0:
+            {
+                rbc_constant& c = std::get<0>(val);
+                c.quoteIfStr();
+                create_and_push(MC_DATA_CMD_ID, MC_VARIABLE_PATH_SET_CONST(varPath.toCompiledPath(), c.val));
+                break;
+            }
+            case 1:
+            {
+                rbc_register& reg = *std::get<1>(val);
+                add( getRegisterValue(reg).storeResult(PADR(storage) RS_PROGRAM_STORAGE SEP + varPath.toCompiledPath(), "int", 1) );
+                break;
+            }
+            case 2:
+            {
+                rs_variable& var = *std::get<2>(val);
+                copyStorage(varPath.toCompiledPath(), MC_VARIABLE_VALUE(var));   
+                break;
+            }
+            case 4:
+            {
+                // rs_list& l = *std::get<4>(val);
+
+                ERROR("Unsupported save operation between an existing variable path and a raw list constant. This is not a bug, but a lack of implementation. This works fine if you create a new variable with the list constant instead.");
+
+                // storeListConstant(varPath, l);
+                break;
+            }
+            case 6:
+            {
+                rs_var_access_path path = std::get<6>(val);
+                copyStorage(varPath.toCompiledPath(), path.toCompiledPath());
+                break;
+            }
+            default:
+                ERROR("Unsupported SAVE operation of rs_var_access_path. TODO implement!");
         }
         return THIS;
     }
@@ -1249,7 +1430,7 @@ namespace conversion
     }
     mc_command            CommandFactory::getVariableValue (rs_variable& var)
     {
-        return mc_command(false, MC_DATA_CMD_ID, MC_GET_VARIABLE_VALUE(var.comp_info.varIndex));
+        return mc_command(false, MC_DATA_CMD_ID, MC_GET_VARIABLE_VALUE(var));
     }
     std::shared_ptr<comparison_register> CommandFactory::compareNull   (const bool scoreboard, const std::string& where, const bool eq)
     {
@@ -1399,13 +1580,14 @@ namespace conversion
     }
     CommandFactory::_This CommandFactory::createVariable   (rs_variable& var)
     {
+        var.comp_info.belongingStackFrame = stackFrames.top();
         create_and_push(MC_DATA_CMD_ID,
-                MC_DATA(modify storage, RS_PROGRAM_VARIABLES)
+                MC_DATA(modify storage, INS(RS_STORAGE_LOCATOR(var)))
                     PAD(append value)
                 MC_VARIABLE_JSON_DEFAULT(std::to_string(var.scope),
                                         std::to_string(var.type_info.type_id))
                         );
-        var.comp_info.varIndex = context.varStackCount++;
+        setVariableCompilerID(var);
         return THIS;
     }
     constexpr std::string CommandFactory::getTypedNullConstant   (const rs_type_info& t)
@@ -1441,13 +1623,145 @@ namespace conversion
 
         return path;
     }
+    CommandFactory::_This CommandFactory::setVariableValue (rs_variable& var, rs_list& l, bool create)
+    {
+        std::stringstream listInitStr;
+        std::vector<mc_command> initCommands;
+
+        std::function<void(const rs_list&, std::stringstream&, std::vector<size_t>)> parseList;
+        
+        parseList = [&](const rs_list& l, std::stringstream& stream, std::vector<size_t> indicies)
+        {
+            const bool isObject = indicies.size() % 2 == 0;
+            auto addField = [&](size_t index, const std::string& value) -> void
+            {
+                if (isObject)
+                    stream << '"' << index << "\":" << value;
+                else
+                    stream << value;
+                stream << ',';
+                
+            };
+            listInitStr << (isObject ? '{' : '[');
+
+            std::vector<uint32_t> uninitialized;
+            size_t index = 0;
+            for(auto& value : l.values)
+            {
+                indicies.push_back(index);
+                switch(value->index())
+                {
+                    case 0:
+                    {
+                        rbc_constant& c = std::get<0>(*value);
+                        c.quoteIfStr();
+
+                        addField(index, c.val);
+
+                        break;
+                    }
+                    case 1:
+                    {
+                        rbc_register& reg = *std::get<1>(*value);
+                        
+                        if(reg.operable)
+                        {
+                            mc_command assign(false, MC_DATA_CMD_ID, MC_DATA(modify storage, INS(accessList(indicies)))
+                                                    PAD(append from score) MC_OPERABLE_REG(INS_L(STR(reg.id)))
+                                            );
+                            initCommands.push_back(assign);
+                        }
+                        else
+                        {
+                            // TODO FIX
+                            mc_command assign(false, MC_DATA_CMD_ID, MC_DATA(modify storage, INS(accessList(indicies)))
+                                                    PAD(append from storage) MC_NOPERABLE_REG(reg.id)
+                                        );
+                            initCommands.push_back(assign);
+                        }
+                        
+                        addField(index, "0");
+                        // TODO fix non operable registers here, 0 might not be the null constant suitable
+                        break;
+                    }
+                    case 2:
+                    {
+                        // insert null, and append (move code to below).
+                        rs_variable& v = *std::get<2>(*value);
+
+                        mc_command assign(false, MC_DATA_CMD_ID, MC_DATA(modify storage, INS(accessList(indicies)))
+                                                    PAD(append from storage) MC_VARIABLE_VALUE_FULL(v)
+                                        );
+                        initCommands.push_back(assign);
+                        addField(index, CommandFactory::getTypedNullConstant(v.type_info));
+
+                        break;
+                    }
+                    case 4:
+                    {
+                        rs_list& child = *std::get<4>(*value);
+                        std::vector<size_t> indiciesCopy = indicies;
+                        // maybe error here
+                        parseList(child, stream, indiciesCopy);
+                        break;
+                    }
+                }
+                indicies.pop_back();
+                index++;
+            }
+            
+            listInitStr.seekp(-1, std::ios_base::end);
+            listInitStr << (isObject ? '}' : ']');
+            listInitStr << ',';
+        };
+        
+        if (create)
+            setVariableCompilerID(var);
+
+        parseList(l, listInitStr, {(size_t)var.comp_info.varIndex});
+        
+        std::string f = listInitStr.str();
+        f.pop_back();
+        if (create)
+        {
+        create_and_push(MC_DATA_CMD_ID,
+            MC_DATA(modify storage, RS_PROGRAM_VARIABLES)
+                PAD(append value)
+            MC_VARIABLE_JSON_VAL(f, std::to_string(var.scope),
+                                        std::to_string(var.type_info.type_id))
+                        );
+        }
+        else
+            create_and_push(MC_DATA_CMD_ID, MC_VARIABLE_SET_CONST(var, f));
+
+        // add all commands after we init
+        for (auto& cmd : initCommands) add(cmd);
+
+        return THIS;
+    }
+    int                   CommandFactory::setVariableCompilerID (rs_variable& var, int by)
+    {
+        if (var.comp_info.isParameter)
+        {
+            var.comp_info.varIndex = context.paramStackCount;
+            context.paramStackCount += by;
+            return context.paramStackCount;
+        }
+        else
+        {
+            var.comp_info.varIndex = context.varStackCount;
+            context.varStackCount += by;
+            return context.varStackCount;
+        }
+    }
     CommandFactory::_This CommandFactory::createVariable   (rs_variable& var, rbc_value& val)
     {
+        var.comp_info.belongingStackFrame = stackFrames.top();
         switch(val.index())
         {
             case 0:
             {
-                var.comp_info.varIndex = context.varStackCount++;
+                setVariableCompilerID(var);
 
                 rbc_constant& c = std::get<0>(val);
                 c.quoteIfStr();
@@ -1461,20 +1775,18 @@ namespace conversion
             }
             case 1:
             {
-                // var.comp_info.varIndex = context.varStackCount++;
-                // handled in create variable
                 sharedt<rbc_register>& reg = std::get<1>(val);
                 createVariable(var);
-                add( getRegisterValue(*reg).storeResult(PADR(storage) MC_VARIABLE_VALUE_FULL(var.comp_info.varIndex), "int", 1) );
+                add( getRegisterValue(*reg).storeResult(PADR(storage) MC_VARIABLE_VALUE_FULL(var), "int", 1) );
                 
                 break;
             }
             case 2:
             {
                 // handled in create variable
-                sharedt<rs_variable>& variable = std::get<2>(val);
+                rs_variable& variable = *std::get<2>(val);
                 createVariable(var);
-                copyStorage(MC_VARIABLE_VALUE(var.comp_info.varIndex), MC_VARIABLE_VALUE(variable->comp_info.varIndex));
+                copyStorage(MC_VARIABLE_VALUE(var), MC_VARIABLE_VALUE(variable));
                 break;
             }
             case 3:
@@ -1484,115 +1796,9 @@ namespace conversion
             }
             case 4:
             {
-                var.comp_info.varIndex = context.varStackCount++;
-
-                //  0, 1, 2, 3
-                // v = [4, x, 4, y]
-
                 rs_list& list = *std::get<4>(val);
-                std::stringstream listInitStr;
-                std::vector<mc_command> initCommands;
 
-                std::function<void(const rs_list&, std::stringstream&, std::vector<size_t>)> parseList;
-                
-                parseList = [&](const rs_list& l, std::stringstream& stream, std::vector<size_t> indicies)
-                {
-                    const bool isObject = indicies.size() % 2 == 0;
-                    auto addField = [&](size_t index, const std::string& value) -> void
-                    {
-                        if (isObject)
-                            stream << '"' << index << "\":" << value;
-                        else
-                            stream << value;
-                        stream << ',';
-                        
-                    };
-                    listInitStr << (isObject ? '{' : '[');
-
-                    std::vector<uint32_t> uninitialized;
-                    size_t index = 0;
-                    for(auto& value : l.values)
-                    {
-                        indicies.push_back(index);
-                        switch(value->index())
-                        {
-                            case 0:
-                            {
-                                rbc_constant& c = std::get<0>(*value);
-                                c.quoteIfStr();
-
-                                addField(index, c.val);
-
-                                break;
-                            }
-                            case 1:
-                            {
-                                rbc_register& reg = *std::get<1>(*value);
-                                
-                                if(reg.operable)
-                                {
-                                    mc_command assign(false, MC_DATA_CMD_ID, MC_DATA(modify storage, INS(accessList(indicies)))
-                                                            PAD(append from score) MC_OPERABLE_REG(INS_L(STR(reg.id)))
-                                                    );
-                                    initCommands.push_back(assign);
-                                }
-                                else
-                                {
-                                    // TODO FIX
-                                    mc_command assign(false, MC_DATA_CMD_ID, MC_DATA(modify storage, INS(accessList(indicies)))
-                                                            PAD(append from storage) MC_NOPERABLE_REG(reg.id)
-                                                );
-                                    initCommands.push_back(assign);
-                                }
-                                
-                                addField(index, "0");
-                                // TODO fix non operable registers here, 0 might not be the null constant suitable
-                                break;
-                            }
-                            case 2:
-                            {
-                                // insert null, and append (move code to below).
-                                rs_variable& v = *std::get<2>(*value);
-
-                                mc_command assign(false, MC_DATA_CMD_ID, MC_DATA(modify storage, INS(accessList(indicies)))
-                                                            PAD(append from storage) MC_VARIABLE_VALUE_FULL(v.comp_info.varIndex)
-                                                );
-                                initCommands.push_back(assign);
-                                addField(index, CommandFactory::getTypedNullConstant(v.type_info));
-
-                                break;
-                            }
-                            case 4:
-                            {
-                                rs_list& child = *std::get<4>(*value);
-                                std::vector<size_t> indiciesCopy = indicies;
-                                parseList(child, stream, indiciesCopy);
-                                break;
-                            }
-                        }
-                        indicies.pop_back();
-                        index++;
-                    }
-                    
-                    listInitStr.seekp(-1, std::ios_base::end);
-                    listInitStr << (isObject ? '}' : ']');
-                    listInitStr << ',';
-                };
-                
-                parseList(list, listInitStr, {(size_t)var.comp_info.varIndex});
-                
-                std::string f = listInitStr.str();
-                f.pop_back();
-
-                create_and_push(MC_DATA_CMD_ID,
-                    MC_DATA(modify storage, RS_PROGRAM_VARIABLES)
-                        PAD(append value)
-                    MC_VARIABLE_JSON_VAL(f, std::to_string(var.scope),
-                                                std::to_string(var.type_info.type_id))
-                                );
-
-                // add all commands after we init
-                for (auto& cmd : initCommands) add(cmd);
+                setVariableValue(var, list, true);
 
                 break;
             }
@@ -1600,7 +1806,7 @@ namespace conversion
             {
                 rs_var_access_path path = std::get<6>(val);
                 createVariable(var);
-                copyStorage(MC_VARIABLE_VALUE(var.comp_info.varIndex), path.toCompiledPath());
+                copyStorage(MC_VARIABLE_VALUE(var), path.toCompiledPath());
                 break;
             }
         }
@@ -1699,6 +1905,3 @@ namespace conversion
     }
 }
 
-
-#undef COMP_ERROR
-#undef COMP_ERROR_R

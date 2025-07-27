@@ -1,0 +1,14 @@
+1. Change so functions attain an index into a stack frame list, based on depth.
+   This makes it so every function knows their parameters start at index 0 up to P (last parameter index).
+   Therefore, no matter where we call the function from, it will still work.w
+
+NOTE:
+z = 1;
+y(x)
+{
+
+}
+y(z);
+=>
+prepend stack_frame
+use 

@@ -2,7 +2,7 @@
 #include "rs_variable.hpp"
 
 #include "../globals.hpp"
-
+#include "../mchelpers.hpp"
 std::string rs_var_access_path::toPath()
 {
     std::stringstream stream;
@@ -21,7 +21,7 @@ __warnattr("Can only be called if the variable associated with this path has bee
 std::string rs_var_access_path::toCompiledPath()
 {
     std::stringstream stream;
-    stream << RS_PROGRAM_VARIABLES << '[' << fromVar->comp_info.varIndex << ']';
+    stream << RS_STORAGE_LOCATOR(*fromVar) << '[' << fromVar->comp_info.varIndex << ']';
     for(auto& p : segments)
     {
         if (p.isArray)
@@ -30,5 +30,5 @@ std::string rs_var_access_path::toCompiledPath()
             stream << '.' << p.accessKey.val;
     }
 
-    return stream.str() + ".value";
+    return stream.str();
 }
