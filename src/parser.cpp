@@ -120,6 +120,7 @@ bst_operation<token>         rbc_parser::make_bst         (bool br, bool oneNode
         }
         case token_type::BRACKET_OPEN:
         {
+            adv();
             bst_operation<token> child = make_bst(true, false);
 
             if (!root.assignNext(child))
@@ -283,7 +284,7 @@ void                         rbc_parser::prune_expr       (bst_operation<token>&
                     break;
                 }
                 default:
-                    COMP_ERROR(RS_UNSUPPORTED_OPERATION_ERROR, "No supported operation of same type (T={})", tutil::type_to_str(left.type));
+                    WARN("No supported operation of same type (T=%s)", tutil::type_to_str(left.type).c_str());
                     break;
             }
         }
@@ -323,9 +324,9 @@ void                         rbc_parser::prune_expr       (bst_operation<token>&
                         rType = var->type_info.tostr();
                 }
 
-                COMP_ERROR(RS_UNSUPPORTED_OPERATION_ERROR, "No supported operation of different type (T={}, T1={})",
-                    lType,
-                    rType);
+                WARN("No supported operation of different type (T=%s, T1=%s)",
+                    lType.c_str(),
+                    rType.c_str());
             }
         }
         if(!result.repr.empty())
@@ -386,10 +387,10 @@ rs_expression                rbc_parser::expreval         (bool br, bool lineEnd
     }
     else if (!bst.isSingular())
         adv();
+
     if(prune)
-    {
         prune_expr(bst);
-    }
+
     expr.operation = bst;
 
     return expr;
@@ -419,7 +420,7 @@ void                 rbc_parser::typeverify       (const rs_type_info& t, rbc_va
                     default:
                         error = "Evaluated type of constant ({}) cannot convert to expected type of {}.";
                 }
-                COMP_ERROR_T(RS_SYNTAX_ERROR, error, *c.trace, false, tutil::type_to_str(c.val_type), t.tostr());
+                COMP_ERROR_T(RS_SYNTAX_ERROR, error, *c.trace, tutil::type_to_str(c.val_type), t.tostr());
             }
             break;
         }
@@ -452,10 +453,10 @@ void                 rbc_parser::typeverify       (const rs_type_info& t, rbc_va
                 switch(useCase)
                 {
                     case 0: // variable assignment
-                        error = "Cannot assign variable value to variable of different type.";
+                        error = "Cannot assign variable value of type {} to variable of different type {}.";
                         break;
                     case 1:
-                        error = "Variable being returned has type that does not match function return signature.";
+                        error = "Variable being returned has type (of {}) that does not match function return signature of {}.";
                         break;
                     default:
                         error = "Evaluated type of {} cannot convert to expected type of {}.";
@@ -663,8 +664,13 @@ std::shared_ptr<rs_list>     rbc_parser::parselist        ()
     do
     {
         adv();
+        if (equals(token_type::SQBRACKET_CLOSED))
+            break;
         rs_expression expr = expreval(false, false);
         rs_expression::_ResultT val = expr.rbc_evaluate(program);
+        // a list expression's element type is determined by its first element. [PUT IN DOCS]
+        if (list.elementType.type_id == -1)
+            list.elementType = typeinfer(val);
 
         if (val.index() == 4) // a list which was parsed fine, so we are at a different ']'
             adv();
@@ -932,14 +938,15 @@ bool                         rbc_parser::callparse        (std::string& name,
     }
 
     // -- TODO -- REMOVE 
+    const bool _functionHasGenerics = (bool)function->generics;
+    size_t expectedGenericTypeCount = _functionHasGenerics ? function->generics->entries.size() : 0;
 
-    size_t expectedGenericTypeCount = function->generics->entries.size();
-    if (_providedGenericTypes && function->generics && !internal && generics.size() != expectedGenericTypeCount)
+    if (_providedGenericTypes && _functionHasGenerics && !internal && generics.size() != expectedGenericTypeCount)
         COMP_ERROR(RS_SYNTAX_ERROR, "Expected passing of (all) generic types to generic function.");
 
     auto parseGenerics = [&]()
     {
-        if(!function->generics)
+        if(!_functionHasGenerics)
             COMP_ERROR(RS_SYNTAX_ERROR, "A function with no generics cannot be called with template arguments.");
         if (expectedReturnType)
         {
@@ -965,11 +972,13 @@ bool                         rbc_parser::callparse        (std::string& name,
             function = compiledFunc;
         }
     };
-
-    if (_providedGenericTypes)
-        parseGenerics();
-    else
-        generics.resize(expectedGenericTypeCount);
+    if (_functionHasGenerics)
+    {
+        if (_providedGenericTypes)
+            parseGenerics();
+        else
+            generics.resize(expectedGenericTypeCount);
+    }
 
     if (function->parent && program.currentScope + 1 != function->scope)
         COMP_ERROR_R(RS_SYNTAX_ERROR, "Nested function definitions cannot be called outside their parent function body.", false);
@@ -1005,6 +1014,7 @@ bool                         rbc_parser::callparse        (std::string& name,
 
             if (tinfo.generic)
             {
+                // TODO: possibly could merge these ifs.
                 if (_providedGenericTypes)
                 {
                     // explicit functionality
@@ -1013,31 +1023,25 @@ bool                         rbc_parser::callparse        (std::string& name,
                     tinfo.assignType(passedType);
 
                     if (!internal && !_extern)
-                        param->type_info = tinfo;
-                }
-                typeverify(tinfo, result, RS_PARSER_PARAMETER_USE_CASE);
+                        param->type_info.assignType(tinfo);
 
-                if (!_providedGenericTypes)
-                {
-                    rs_type_info genericType;
-
-                    // x<int[]> (T) T = int[]
-                    // x(T) -> x(int[]) T = int
+                    typeverify(tinfo, result, RS_PARSER_PARAMETER_USE_CASE);
                     
+                }
+                else
+                {
                     rs_type_info& finalType = generics.at(tinfo.generic_id);
 
-                    genericType.assignType(typeinfer(result), false);
-
-                    if (finalType.type_id == -1)
-                    {
-                        finalType = genericType;
-                    }
+                    bool typeExists = finalType.type_id != -1;
+                    if (typeExists)
+                        tinfo.assignType(finalType, true); // if the type has been defined, it will be explicitly set everywhere else.
                     else
-                    {
-                        // the type has already been assigned and we need to conform with this type.
-                        typeverify(finalType, result, RS_PARSER_PARAMETER_USE_CASE);
-                    }
+                        tinfo.assignType(typeinfer(result), false);
                     
+                    if (!typeExists)
+                        finalType.assignType(tinfo, false); // implicitly assign to T
+
+                    typeverify(tinfo, result, RS_PARSER_PARAMETER_USE_CASE);
                 }
             }
             else
@@ -1062,7 +1066,7 @@ bool                         rbc_parser::callparse        (std::string& name,
     }
     
     // valiate we have inferred all generics
-    if (!_providedGenericTypes)
+    if (_functionHasGenerics && !_providedGenericTypes)
     {
         for (const auto& t : generics)
         {
@@ -1333,7 +1337,7 @@ _skip_type:
 
             }
             // singular expressions need to adv
-            adv();
+            // adv();
         }
         break;
     }

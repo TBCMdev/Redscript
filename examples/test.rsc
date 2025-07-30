@@ -1,14 +1,9 @@
-x:int;
-y:int;
-z:int;
+use lang;
+x: int = 4;
+z: int = 2;
 
-w: int = x;
+// INT_KW_ID 1
+// token_type::INT_LITERAL
+y: int = x * (2 + 2);
 
-method: void stuff(param: int)
-{
-    copyParam: int& = param;
-}
-
-stuff(x);
-
-var: int = 12;
+msg(@r, y);

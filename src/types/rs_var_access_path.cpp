@@ -17,11 +17,11 @@ std::string rs_var_access_path::toPath()
 
     return stream.str();
 }
-__warnattr("Can only be called if the variable associated with this path has been given a compilation index.")
+// "Can only be called if the variable associated with this path has been given a compilation index."
 std::string rs_var_access_path::toCompiledPath()
 {
     std::stringstream stream;
-    stream << RS_STORAGE_LOCATOR(*fromVar) << '[' << fromVar->comp_info.varIndex << ']';
+    stream << RS_STORAGE_LOCATOR(*fromVar) << '[' << fromVar->comp_info.varIndex << "].value";
     for(auto& p : segments)
     {
         if (p.isArray)

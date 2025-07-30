@@ -19,12 +19,19 @@ endif()
 
 add_compile_options(-g3 -pipe)
 
-file(GLOB TYPES_SOURCES "${CMAKE_SOURCE_DIR}/src/types/*.cpp")
-
-add_library(redscript_types ${TYPES_SOURCES})
-
-
-
+add_library(redscript_types 
+	src/types/project_fragment.hpp
+	src/types/rbc_constant.hpp
+	src/types/rbc_register.hpp
+	src/types/rbc_types.hpp
+	src/types/rbc_value.hpp
+	src/types/rs_compilation_info.hpp
+	src/types/rs_expression.cpp
+	src/types/rs_list.hpp
+	src/types/rs_object.hpp
+	src/types/rs_variable.hpp
+	src/types/rs_var_access_path.cpp
+)
 
 add_library(redscript_lib
 	src/config.cpp

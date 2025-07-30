@@ -4,20 +4,23 @@ method<T>: void x(param: T)
     msg<T>(@r, param);
 }
 
-n: int[]? = null;
+n: int[] = [2];
 iarray: int[] = [4, 3, 2];
 
-method<T>: void testing(i1: T?, i2: T[])
+// there still are some bugs to do with implicit generic type instantiation.
+method: void testing(x: int[], y: int[])
 {
-    msg(@r, i1);
-    msg(@r, i2);
-
 }
 
-testing(n, iarray[0]);
+testing<int[], int[]>(n, iarray);
 
 method: int stuff (message: string)
 {
-    _x: string = "message"; // but msg(@r, "message") FAILS???????
-    msg(@r, _x); return 1;
+    msg(@r, message);
+    return 1;
 }
+
+store storage
+store scoreboard
+
+

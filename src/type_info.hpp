@@ -93,13 +93,9 @@ struct rs_type_info
         if (array_count == 0) return *this;
         if (array_count == 1) return rs_type_info{type_id, 0, optional, reference, generic, generic_id, otherTypes, {}};
 
-        auto arrIndInf = arrayFlags.at(array_count - 2);
-        auto flagsCopy = arrayFlags;
-        
         // if (flagsCopy.size() > 0)
             // flagsCopy.pop_back();
-
-        return rs_type_info{type_id, array_count - 1, arrIndInf.first, arrIndInf.second, generic, generic_id, otherTypes, flagsCopy};
+        return rs_type_info{type_id, array_count - 1, optional, reference, generic, generic_id, otherTypes, arrayFlags};
     }
     inline bool compareArrayFlags(const rs_type_info& other) const
     {
@@ -169,24 +165,44 @@ struct rs_type_info
             info.assignType(t, _explicit);
 
         }
-        // for (auto& other : info.otherTypes)
-        //     resolveGenericsIn(other, generics);
     }
-    inline void assignType(const rs_type_info& t, [[maybe_unused]] bool _explicit = true)
+    inline void assignType(const rs_type_info& t, bool _explicit = true)
     {
-        if (!_explicit && t.array_count > 0)
+        // T[] int[]
+        bool likemindedTypes = !_explicit 
+            && generic 
+            && t.array_count == array_count;
+
+        if (likemindedTypes)
         {
-            *this = t.element_type();
+            // We are in the case: param = T[], arg = int[] -> T = int
+            type_id = t.type_id;
+            // Keep the generic identity
+            generic = t.generic;
+            generic_id = t.generic_id;
             return;
         }
+
+        // Otherwise, assign the type directly
         array_count += t.array_count;
-        arrayFlags.insert(arrayFlags.begin(), t.arrayFlags.begin(), t.arrayFlags.end());
+        if (t.arrayFlags.size() > 0)
+            arrayFlags.insert(arrayFlags.begin(), t.arrayFlags.begin(), t.arrayFlags.end());
+        
         type_id = t.type_id;
-        // optional = t.optional;   - optionals should be equal
-        // reference = t.reference; - reference should be inferred
+
+        // T? -> int[]?
+        // T?[] -> int?[]?
+        if (array_count > 0 && optional && t.isFinallyOptional())
+        {
+            optional = t.optional;
+            arrayFlags.back().first = true;
+        }
+
+        // Keep the generic identity
         generic = t.generic;
         generic_id = t.generic_id;
     }
+
 };
 
 // oh lord

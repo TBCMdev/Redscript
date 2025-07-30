@@ -28,8 +28,8 @@ See the docs for more info.
 method<_Type>:   void msg  (__p: selector, __msg: _Type?)      __cpp__;
 method:          void kill (__p: selector)                     __cpp__;
 
-method<_ElType>: int len   (const __l: _ElType[]?)               __cpp__;
-method:          int slen  (const __str: string)                __cpp__;
+method<_ElType>: int len   (const __l: _ElType[]?)             __cpp__;
+method:          int slen  (const __str: string)               __cpp__;
 
 /*
 Houses all helper functions to do with lists.
@@ -90,3 +90,8 @@ module array
     */
     // method: int stuff (message: string)
     // { msg(@r, "message"); return 1; }
+
+module floats
+{
+    method: int ftoi(y: float) extern;
+}
