@@ -29,7 +29,8 @@ add_library(redscript_types
 	src/types/rs_expression.cpp
 	src/types/rs_list.hpp
 	src/types/rs_object.hpp
-	src/types/rs_variable.hpp
+	src/types/rs_variable.cpp
+	src/types/rs_macro_container.cpp
 	src/types/rs_var_access_path.cpp
 )
 

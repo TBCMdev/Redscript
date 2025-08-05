@@ -171,7 +171,7 @@ struct rs_type_info
         // T[] int[]
         bool likemindedTypes = !_explicit 
             && generic 
-            && t.array_count == array_count;
+            && t.array_count >= array_count;
 
         if (likemindedTypes)
         {

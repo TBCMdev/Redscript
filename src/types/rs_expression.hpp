@@ -17,6 +17,7 @@ struct rs_expression
 {
     using _ResultT = rbc_value;
     bst_operation<token> operation;
+    bool macro = false;
     std::shared_ptr<_ResultT> nonOperationalResult = nullptr;
     
     _ResultT rbc_evaluate(rbc_program&,

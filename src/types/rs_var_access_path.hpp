@@ -6,10 +6,13 @@
 #include "../type_info.hpp"
 
 struct rs_variable;
+struct rs_var_access_path;
 
 struct rs_var_access_path_item
 {
-    using _Value = rbc_constant;
+    // rbc_constant: 0, 1, 5,
+    // other: macrod in
+    using _Value = std::variant<rbc_constant, std::shared_ptr<rs_variable>, std::shared_ptr<rs_var_access_path>>;
     
     _Value accessKey;
     bool   isArray; // false means its an object

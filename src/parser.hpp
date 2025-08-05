@@ -44,7 +44,8 @@ struct rbc_parser
     rs_expression              expreval       (bool br = false,
                                                bool lineEnd = true,
                                                bool obj = false,
-                                               bool prune = true);
+                                               bool prune = true,
+                                               bool oneNode = false);
                                    
     std::shared_ptr<rs_object> inlineobjparse ();
 #pragma endregion lang

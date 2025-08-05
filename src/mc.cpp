@@ -153,6 +153,11 @@ mc_command::_This mc_command::store(bool result, const std::string &where)
     }
     return THIS;
 }
+void              mc_command::package()
+{
+    if (body.find('$') != std::string::npos)
+        body = '$' + body;
+}
 mc_command::_This mc_command::storeSuccess(const std::string &where)
 {
     return store(false, where);
@@ -172,10 +177,14 @@ mc_command::_This mc_command::storeResult(const std::string &where)
 const std::filesystem::path makeDatapack(const std::filesystem::path &path)
 {
     const std::filesystem::path funcDir = path / "data" / RS_STORAGE_NAME / "function";
-    std::filesystem::create_directories(funcDir);
 
-    for(const auto& entry : std::filesystem::directory_iterator(funcDir))
-        std::filesystem::remove_all(entry);
+    if (std::filesystem::exists(funcDir))
+    {
+        for (const auto& entry : std::filesystem::directory_iterator(funcDir))
+            std::filesystem::remove_all(entry);
+    }
+
+    std::filesystem::create_directories(funcDir / RS_IMPL_LIBRARY_NAME);
 
     std::ofstream mcMetaPack(path / MC_MCMETA_FILE_NAME);
 
@@ -218,23 +227,41 @@ void writemc(mc_program &program, std::string name, const std::string &path, std
 {
     if (!RS_CONFIG.exists("mcpath"))
     {
-        err = "'mcpath' doesn't exist in config. Can't write.";
+        err = "'mcpath' doesn't exist in rsconfig. Can't write.";
         return;
     }
+    if (!RS_CONFIG.exists("lib"))
+    {
+        err = "'lib' doesn't exist in rsconfig. Can't write.";
+        return;
+    }
+    const std::filesystem::path minecraftPath = RS_CONFIG.get<std::string>("mcpath");
+    // firstly write std lib
+    // can't make standalone datapack due to mchelpers relying on the datapack name.
+    // auto stdLibPath = minecraftPath / RS_IMPL_LIBRARY_NAME / MC_DATAPACK_FOLDER / "__" RS_IMPL_LIBRARY_NAME;
+    // auto stdLibFuncPath = makeDatapack(stdLibPath);
+    
+    // std::filesystem::copy(RS_CONFIG.get<std::string>("lib") + "/impl", stdLibFuncPath);
 
+    // then write their code to different datapack
     toLower(name);
 
     auto writeFunction = [&](mc_function &func, const std::filesystem::path &path)
     {
         std::ofstream stream(path);
         for (auto &command : func.commands)
+        {
+            command.package();
             stream << command.body << '\n';
+        }
         stream.close();
         return true;
     };
     try
     {
-        std::filesystem::path mcpath(RS_CONFIG.get<std::string>("mcpath"));
+
+
+        std::filesystem::path mcpath(minecraftPath);
         if (!name.ends_with(".mcfunction"))
             name += ".mcfunction";
         const std::filesystem::path safeName = removeSpecialCharacters(name);
@@ -247,7 +274,10 @@ void writemc(mc_program &program, std::string name, const std::string &path, std
         mcpath /= MC_DATAPACK_FOLDER / (safeName.stem());
         const std::filesystem::path funcPath = makeDatapack(mcpath);
 
+        // firstly write std lib to funcPath
         std::filesystem::path to = funcPath / safeName;
+
+
         if (!writeFunction(program.globalFunction, to))
         {
         _error:
@@ -256,7 +286,7 @@ void writemc(mc_program &program, std::string name, const std::string &path, std
         }
         for (mc_function &function : program.functions)
         {
-
+            // IF FUNCTION IS PART OF STANDARD LIBRARY
             std::filesystem::path parentHashPath;
 
             std::string name;
@@ -271,20 +301,18 @@ void writemc(mc_program &program, std::string name, const std::string &path, std
 
             if (function.modulePath.size() == 0)
             {
-                to = funcPath / name;
+                to = function.isimpl ? funcPath / RS_IMPL_LIBRARY_NAME / name : funcPath / name;
             }
             else
             {
-                to = funcPath;
+                to = function.isimpl ? funcPath / RS_IMPL_LIBRARY_NAME : funcPath;
                 for(std::string& _module : function.modulePath)
                 {
                     to /= _module;
-                    // maybe trying to create way too many directories.
-                    // TODO: fix!
                     std::filesystem::create_directory(to);
                 }
 
-                to /= funcPath / name;
+                to /= name;
             }
             if (!writeFunction(function, to))
                 goto _error;

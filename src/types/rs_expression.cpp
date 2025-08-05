@@ -117,9 +117,6 @@ rs_expression::_ResultT rs_expression::rbc_evaluate(rbc_program& program, bst_op
 
     return reg;
 }
-
-// call after first [
-
 #pragma endregion expressions
 #undef EXPR_ERROR
 #undef COMP_ERROR

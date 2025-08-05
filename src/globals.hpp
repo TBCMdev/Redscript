@@ -3,6 +3,8 @@
 
 #define RS_CONFIG_LOCATION "./rs.config"
 
+
+#define RS_IMPL_LIBRARY_NAME "__redscript_impl"
 #define RS_STORAGE_NAME "redscript"
 #define RS_PROGRAM_STORAGE RS_STORAGE_NAME ":_program"
 
@@ -23,7 +25,7 @@
 #define MC_TEMP_STORAGE_NAME "temp"
 
 
-#define RS_DEFAULT_STACK_FRAME "{\"" RS_PROGRAM_VARIABLES_RAW "\": [], \"" RS_PROGRAM_PARAMETERS_RAW "\": []}"
+#define RS_DEFAULT_STACK_FRAME "{\"" RS_PROGRAM_VARIABLES_RAW "\": [], \"" RS_PROGRAM_PARAMETERS_RAW "\": {}}"
 
 #define RS_PROGRAM_DATA_DEFAULT "{\"" RS_PROGRAM_REGISTERS "\":[], \"" RS_PROGRAM_DATA "\":{}, \"" RS_PROGRAM_STACK "\":[" RS_DEFAULT_STACK_FRAME "], \"" RS_PROGRAM_RETURN_REGISTER "\": 0, \"temp\": 0}"
 

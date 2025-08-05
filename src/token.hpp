@@ -32,6 +32,7 @@ enum class token_type
     OPERATOR,
     VAR_OPERATOR,
     OBJECT_ACCESS_OPERATOR,
+    MACRO_OPERATOR,
     COMPARE_EQUAL,
     COMPARE_NOTEQUAL,
     MODULE_ACCESS,
@@ -61,6 +62,9 @@ enum class token_type
     KW_IF,
     KW_ELSE,
     KW_ELIF,
+
+    KW_ALIAS,
+    KW_TYPE,
 
     KW_CONST,
     KW_OPTIONAL,
@@ -191,7 +195,6 @@ namespace tutil
         return result;
     }
 };
-
 struct token
 {
     std::string repr = "";

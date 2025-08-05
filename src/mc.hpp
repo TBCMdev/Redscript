@@ -33,8 +33,8 @@ struct mc_command
     constexpr inline bool isexec()
     { return cmd == MC_EXEC_CMD_ID; }
 
+    void package ();
     _This addroot();
-
     _This store(bool result, const std::string& where);
     _This storeResult(const std::string& where, const std::string& dataType, int scale);
     _This storeResult(const std::string& where);
@@ -54,6 +54,7 @@ struct mc_function
     std::vector<std::string> modulePath;
     std::string parentalHashStr = "";
     std::string  genericHashStr = "";
+    bool isimpl = false; // for when the function is detected inside the lib directory defined in .rsconfig
 };
 struct comparison_register
 {

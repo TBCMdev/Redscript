@@ -230,6 +230,9 @@ token_list tlex(const std::string &fName, std::string &content, rs_error *err = 
             case '.':
                 customType = token_type::OBJECT_ACCESS_OPERATOR;
                 break;
+            case '$':
+                customType = token_type::MACRO_OPERATOR;
+                break;
             case '(':
                 customType = token_type::BRACKET_OPEN;
                 break;

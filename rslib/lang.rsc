@@ -1,3 +1,6 @@
+use _compiler;
+use definitions;
+// use entity; not implemented yet
 /*
 Houses the imporant language functions of the redscript language.
 
@@ -7,7 +10,7 @@ Beta note: AVOID_ERROR_CHECK is a temporary generic type used to delay function 
            any function with that as a template should not be used.
 */
 /*
-gets an attribute attached to a value in storage.
+Gets an attribute attached to a value in storage.
 this function only works on variables and objects.
 */
 method<_Type>: void getattr (const __v: _Type&, __attr: string)             __cpp__;
@@ -25,11 +28,13 @@ Sends a message __msg to the entity selector __p.
 Note that in redscript alpha, printing a list will look different to what it looks like in code.
 See the docs for more info.
 */
-method<_Type>:   void msg  (__p: selector, __msg: _Type?)      __cpp__;
-method:          void kill (__p: selector)                     __cpp__;
+method<_Type>:   void msg   (__p: selector, __msg: _Type?)      __cpp__;
+method:          void kill  (__p: selector)                     __cpp__;
 
-method<_ElType>: int len   (const __l: _ElType[]?)             __cpp__;
-method:          int slen  (const __str: string)               __cpp__;
+method<_ElType>: int len    (const __l: _ElType[]?)             __cpp__;
+method:          int slen   (const __str: string)               __cpp__;
+
+method:          void place (__block: string, __x: int, __y: int, __z: int, __dimension: int) __cpp__;
 
 /*
 Houses all helper functions to do with lists.
@@ -42,14 +47,17 @@ THESE FUNCTIONS ARE NOT IMPLEMENTED. You can call them and they will do nothing.
 module array
 {
     /*
-    returns the element located at the index __index inside __l.
+    Returns the element located at the index __index inside __l.
     You can use this function to access lists via non-constant like values,
     however it is more expensive to compute, as it uses macros.
 
     If __index is not within the bounds of the array, null is returned.
 
     */
-    method<_ElType>: _ElType?  at     (const __l: _ElType[], __index: int) extern;
+    method<_ElType>: _ElType?  at     (const __l: _ElType[], const __index: int)
+    {
+        return __l[$__index];
+    }
 
     /*
     Appends __value to the end of __l.
@@ -64,7 +72,7 @@ module array
     /*
     Copies and resizes the array __l based on the new bounds begin and end.
     
-    If begin | end are not valid indicies, an empty array is returned.
+    If begin or end are not valid indicies, an empty array is returned.
     */
     method<_ElType>: _ElType[] resize (const __l: _ElType[]&, begin: int, end: int) extern;
 
@@ -81,17 +89,4 @@ module array
     */
     method<_ElType>: int       index  (const __l: _ElType[]&, const __val: _ElType) extern wrapper __nocompile__;
 }
-    /*
-    Prints a message to the person who ran the command.
 
-    Wraps msg() impl.
-
-    
-    */
-    // method: int stuff (message: string)
-    // { msg(@r, "message"); return 1; }
-
-module floats
-{
-    method: int ftoi(y: float) extern;
-}

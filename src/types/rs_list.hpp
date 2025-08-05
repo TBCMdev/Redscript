@@ -43,7 +43,8 @@ struct rs_list
             }
             stream << ',';
         }
-        stream.seekp(-1, std::ios_base::end);
+        if (values.size() > 0)
+            stream.seekp(-1, std::ios_base::end);
         stream << ']';
         return stream.str();
     }

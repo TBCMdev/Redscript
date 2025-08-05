@@ -11,9 +11,12 @@
 #include <iomanip>
 #include <unordered_map>
 #include <type_traits>
+#include <filesystem>
 #include <unordered_set>
+#include <vector>
 
 #define UNUSED [[maybe_unused]]
+
 
 
 inline constexpr std::string color_format(const std::string& _msg, const std::string& color, const std::string& reset_color)
@@ -59,14 +62,21 @@ struct shared_wrapper
 
         return *this;
     }
-    _Ty& operator*()
-    {
+    _Ty& operator*() {
+        if (!element || !element->val) {
+            throw std::runtime_error("Dereferencing null shared_wrapper");
+        }
         return *element->val;
     }
     _Ty* operator->()
     {
-        return element->val.get();
+        return element ? element->val.get() : nullptr;
     }
+
+    operator bool() const
+    {
+        return (bool)element && (bool)element->val;
+    } 
 };
 #pragma region weak_ptr
 /*
@@ -381,5 +391,26 @@ namespace util
         std::stringstream ss;
         ss << std::hex << std::setw(sizeof(size_t) * 2) << std::setfill('0') << hashValue;
         return ss.str();
+    }
+    template<typename _Iter, typename _Predicate>
+    inline std::vector<_Iter> find_all(_Iter begin, _Iter end, _Predicate func)
+    {
+        std::vector<_Iter> v;
+
+        while(begin != end)
+        {
+            begin = std::find_if(begin, end, func);
+            if (begin != end) 
+            {
+                v.push_back(begin);
+                ++begin;
+            }
+        }
+        return v;
+    }
+
+    inline bool is_subpath_of(const std::filesystem::path& base, const std::filesystem::path& target) {
+        auto rel = std::filesystem::relative(target, base);
+        return !rel.empty() && *rel.begin() != "..";
     }
 }

@@ -1,0 +1,3 @@
+alias DIMENSION_OVERWORLD 0;
+alias DIMENSION_NETHER    1;
+alias DIMENSION_END       2;

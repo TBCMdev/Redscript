@@ -195,6 +195,44 @@ std::string rbc_function::fullName()
 
     return ret + name;
 }
+bool        rbc_function::assertGeneric()
+{
+    if (verifiedGeneric) return true;
+    
+    verifiedGeneric = true;
+
+    // if called lots of times may cause delay in generic checking
+    if (!generics || generics->variations.size() == 1)
+    {
+        generics.reset();
+        return false;
+    }
+
+    auto& map = generics->variations;
+    auto it = map.begin();
+
+    if (map.size() == 1)
+    {
+    _change:
+        *this = *it->second;
+        generics.reset();
+        return false;
+    }
+    else
+    {
+        auto& reference = it->second->instructions;
+        for (++it; it != map.end(); ++it)
+        {
+            if (it->second->instructions != reference)
+            {
+                // assign any variation in map
+                goto _change;
+            }
+        }
+    }
+    return true;
+
+}
 std::string rbc_function::toHumanStr()
 {
     std::stringstream stream;
@@ -207,6 +245,14 @@ std::string rbc_function::toHumanStr()
 
     return stream.str();
 }
+void rbc_function::addMacroDefinition(const std::shared_ptr<rs_variable>& var)
+{
+    if (!macroContainer)
+        macroContainer = std::make_shared<rs_macro_container>();
+                    
+    macroContainer->add(var);
+}
+
 function_locator rbc_function::locator()
 {
     function_locator loc(modulePath);
@@ -369,25 +415,22 @@ std::string rbc_command::toHumanStr()
     }
     return stream.str();
 }
-std::shared_ptr<rs_variable> rbc_program::getVariable(const std::string& name)
+std::shared_ptr<rs_variable> rbc_program::getVariable(const std::string& name, bool mustBeParameter)
 {
+    std::unordered_map<std::string, rbc_func_var_t>::iterator nresult;
 
-    // TODO ALLOW FOR DIFFERENT SCOPED VARS WITH SAME NAME
-    auto result = std::find_if(globalVariables.begin(), globalVariables.end(),
-    [&](std::shared_ptr<rs_variable>& var)
-        {return var->name == name;}
-    );
-    if(result != globalVariables.end()) return *result;
+    if (currentFunction)
+    {
+        nresult = currentFunction->localVariables.find(name);
+        
+        if (nresult != currentFunction->localVariables.end()
+        && nresult->second.first->scope <= currentScope)
+        {
+            if (!mustBeParameter || nresult->second.second)
+                return nresult->second.first;
+        }
+    }
     
-    if (!currentFunction) return nullptr;
-
-    auto nresult = currentFunction->localVariables.find(name);
-    
-    if (nresult != currentFunction->localVariables.end()
-    && nresult->second.first->scope <= currentScope) return nresult->second.first;
-
-    // also check parent functions
-
     if (functionStack.size() > 0)
     {
         for(auto it=functionStack.begin(); it != functionStack.end(); ++it)
@@ -397,9 +440,22 @@ std::shared_ptr<rs_variable> rbc_program::getVariable(const std::string& name)
             nresult = v->localVariables.find(name);
 
             if (nresult != v->localVariables.end())
+            {
+                if (mustBeParameter && !nresult->second.second)
+                    continue;
                 return nresult->second.first;
+            }
         }
     }
+    
+    if (mustBeParameter) return nullptr;
+
+    auto result = std::find_if(globalVariables.begin(), globalVariables.end(),
+    [&](std::shared_ptr<rs_variable>& var)
+        {return var->name == name;}
+    );
+
+    if(result != globalVariables.end()) return *result;
 
     return nullptr;
 }
@@ -445,31 +501,66 @@ sharedt<rbc_register> rbc_program::makeRegister(bool operable, bool vacant)
         return;                                                    \
     }
 void preprocess(token_list& tokens, std::string fName, std::string& content, rs_error* err, fragment_ptr_deque& fragments,
-                std::shared_ptr<std::vector<std::filesystem::path>> visited)
+                std::shared_ptr<rs_preprocessor_context> context)
 {
     size_t       _At = 0;
     std::filesystem::path rootPath = std::filesystem::absolute(fName);
-    if(!visited)
-        visited = std::make_shared<std::vector<std::filesystem::path>>();
 
+    if(!context)
+        context = std::make_shared<rs_preprocessor_context>();
+
+
+    
     do
     {
+        size_t start = 0;
         token* current = &tokens.at(_At);
+
+        auto alias = context->aliases.find(current->repr);
+        if (alias != context->aliases.end())
+        {
+            auto& sec = alias->second;
+            current->repr = sec.repr;
+            current->type = sec.type;
+        }
 
         switch(current->type)
         {
+            case token_type::KW_ALIAS:
+            {
+                start = _At;
+                if (_At + 3 >= tokens.size())
+                    PRE_PROCESS_ERROR(RS_SYNTAX_ERROR, "Expected alias name and definition, not EOF.");
+                
+                token& name = tokens.at(++_At);
+                
+                token& replacement = tokens.at(++_At);
+                context->aliases.insert_or_assign(name.repr, replacement);
+                
+                // if (!success.second)
+                //     PRE_PROCESS_ERROR(RS_SYNTAX_ERROR, "Alias '{}' already exists.", name.repr);
+                
+                if (tokens.at(++_At).type != token_type::LINE_END)
+                    PRE_PROCESS_ERROR(RS_SYNTAX_ERROR, "Expected ';' to end alias definition. Remember, aliases can only replace 1 token.");
+                
+                tokens.erase(tokens.begin() + start, tokens.begin() + _At);
+                _At -= _At - start;
+                break;
+            }
             case token_type::KW_USE:
             {
-                size_t start = _At;
+                start = _At;
                 if (_At + 1 >= tokens.size()) 
                     PRE_PROCESS_ERROR(RS_SYNTAX_ERROR, "Expected file to import, not EOF.");
                 
                 token& path = tokens.at(++_At);
                 std::string file = (std::regex_replace(path.repr, std::regex("\\."), "/") + ".rsc");
                 std::filesystem::path filePath = rootPath.parent_path() / file;
-                if (visited && std::find(visited->begin(), visited->end(), filePath) != visited->end())
+                auto& visited = context->visited;
+
+                if (std::find(visited.begin(), visited.end(), filePath) != visited.end())
                     PRE_PROCESS_ERROR(RS_ALREADY_INCLUDED_ERROR, "This file has already been included.");
-                visited->push_back(filePath);
+                visited.push_back(filePath);
                 std::string fileContent = readFile(filePath);
 
                 if (fileContent.empty())
@@ -500,7 +591,7 @@ void preprocess(token_list& tokens, std::string fName, std::string& content, rs_
                 std::string filePathStr = filePath.filename().string();
                 token_list fileTokens = tlex(filePathStr, fileContent, err);
 
-                preprocess(fileTokens, filePathStr, fileContent, err, fragments, visited);
+                preprocess(fileTokens, filePathStr, fileContent, err, fragments, context);
 
                 if(err->trace.ec)
                     return;
@@ -512,7 +603,7 @@ void preprocess(token_list& tokens, std::string fName, std::string& content, rs_
         }
     } while(++_At < tokens.size());
 
-    fragments.push_back(std::make_shared<project_fragment>(fName, content, tokens));
+    fragments.push_back(std::make_shared<project_fragment>(fName, content, tokens, rootPath.parent_path()));
 
 }
 #define RS_ASSERTC(C, m) if (!(C)) {err=m;return {};}
@@ -662,7 +753,6 @@ mc_program tomc(rbc_program& program, const std::string& moduleName, std::string
                     }
                     rbc_function& func = *f;
 
-                    factory.disableBuffer();
                     
                     if (std::find(func.decorators.begin(), func.decorators.end(), rbc_function_decorator::CPP) != func.decorators.end())
                     {
@@ -671,7 +761,10 @@ mc_program tomc(rbc_program& program, const std::string& moduleName, std::string
                         rbc_command* cmd;
 
                         // we dont need the parameter instructions anymore.
+                        factory.deleteCurrentStackFrame();
+                        factory.disableBuffer();
                         factory.clearBuffer();
+
                         while(--caret >= 0 && (cmd = &instructions.at(caret))->type == rbc_instruction::PUSH)
                         {
                             parameters.push_back(*cmd->parameters.at(2));
@@ -697,6 +790,7 @@ mc_program tomc(rbc_program& program, const std::string& moduleName, std::string
                     else
                     {
                         // we do need the parameters at runtime! the function is not inbuilt
+                        factory.disableBuffer();
                         factory.addBuffer();
                         factory.invoke(moduleName, func);
                         factory.deleteCurrentStackFrame();
@@ -1029,7 +1123,7 @@ mc_program tomc(rbc_program& program, const std::string& moduleName, std::string
                             {
                                 rs_variable& var = *std::get<2>(val);
 
-                                factory.copyStorage(RS_PROGRAM_STORAGE SEP RS_PROGRAM_RETURN_REGISTER, MC_VARIABLE_VALUE_FULL(var));
+                                factory.copyStorage(RS_PROGRAM_RETURN_REGISTER, MC_VARIABLE_VALUE_FULL(var));
                                 // factory.copyStorage(RS_PROGRAM_STORAGE SEP RS_PROGRAM_RETURN_TYPE_REGISTER, MC_VARIABLE_TYPE_FULL(var));
                                 break;
                             }
@@ -1037,7 +1131,7 @@ mc_program tomc(rbc_program& program, const std::string& moduleName, std::string
                             case 6:
                             {
                                 rs_var_access_path& path = std::get<6>(val);
-                                factory.copyStorage(RS_PROGRAM_STORAGE SEP RS_PROGRAM_RETURN_REGISTER, path.toCompiledPath());
+                                factory.copyStorage(RS_PROGRAM_RETURN_REGISTER, path.toCompiledPath());
                                 // factory.copyStorage(RS_PROGRAM_STORAGE SEP RS_PROGRAM_RETURN_TYPE_REGISTER, path.toCompiledPath(true));
                                 break;
                             }
@@ -1130,7 +1224,7 @@ mc_program tomc(rbc_program& program, const std::string& moduleName, std::string
             }
         }
 
-
+        const std::string implPath = RS_CONFIG.get<std::string>("lib");
         for(size_t i = 0; i < allFunctions.size(); i++)
         {
             auto& function = allFunctions.at(i);
@@ -1143,11 +1237,12 @@ mc_program tomc(rbc_program& program, const std::string& moduleName, std::string
                 std::find(decorators.begin(), decorators.end(), rbc_function_decorator::EXTERN) == decorators.end()
             ) // not inbuilt function 
             {
-                // todo clean up
-                if (function->generics)
+                bool isimpl = util::is_subpath_of(implPath, function->fromFragment->folderPath);
+                bool has_generics      = (bool)function->generics;
+                
+                if (has_generics)
                 {
                     rbc_function_generics& generics = *function->generics;
-
                     for (auto& entry : generics.variations)
                     {
                         mc_function f{entry.second->name,
@@ -1155,7 +1250,7 @@ mc_program tomc(rbc_program& program, const std::string& moduleName, std::string
                               entry.second->modulePath};
                         f.parentalHashStr = entry.second->getParentHashStr();
                         f.genericHashStr  = entry.second->getGenericsHashStr();
-
+                        f.isimpl          = isimpl;
                         mcprogram.functions.push_back(f);
                     }
                 }
@@ -1165,6 +1260,7 @@ mc_program tomc(rbc_program& program, const std::string& moduleName, std::string
                                 parseFunction(function.get(), function->instructions),
                                 function->modulePath};
                     f.parentalHashStr = function->getParentHashStr();
+                    f.isimpl = isimpl;
                     mcprogram.functions.push_back(f);
                 }
             }
@@ -1241,24 +1337,26 @@ namespace conversion
     CommandFactory::_This CommandFactory::invoke           (const std::string& module, rbc_function& func)
     {
         // TODO: MACROS & NAMESPACES
-
         std::string parentHashStr = func.getParentHashStr();
         if (!parentHashStr.empty()) parentHashStr.push_back('_');
 
         std::string name = parentHashStr + func.name;
 
-        if (func.assignedGenerics)
+        if (func.assignedGenerics && func.assertGeneric())
             name += "_g_" + func.getGenericsHashStr();
 
+        // todo: find a way...
+        std::string extra = func.macroContainer ? PAD(with) + func.macroContainer->constructMacroPayload() : "";
+
         if (func.modulePath.empty())
-            create_and_push(MC_FUNCTION_CMD_ID, module + ':' + name);
+            create_and_push(MC_FUNCTION_CMD_ID, module + ':' + name + extra);
         else
         {
             std::string path;
             for(std::string& s : func.modulePath)
                 path += s + '/';
 
-            create_and_push(MC_FUNCTION_CMD_ID, module + ':' + path + name);
+            create_and_push(MC_FUNCTION_CMD_ID, module + ':' + path + name + extra);
         }
         return THIS;
     }
@@ -1266,13 +1364,13 @@ namespace conversion
     {
         context.paramStackCount--;
         rs_variable& var = *context.stack.back();
-        create_and_push(MC_DATA_CMD_ID, MC_DATA(remove storage, INS_L(ARR_AT(INS_R(RS_STORAGE_LOCATOR(var)), VAR_ID(var)))));
+        create_and_push(MC_DATA_CMD_ID, MC_DATA(remove storage, INS_L(getVariableValueLocation(var))));
         context.stack.pop_back();
         return THIS;
     }
     CommandFactory::_This CommandFactory::deleteVariable     (rs_variable& var)
     {
-        create_and_push(MC_DATA_CMD_ID, MC_DATA(remove storage, INS_L(ARR_AT(INS_R(RS_STORAGE_LOCATOR(var)), VAR_ID(var)))));
+        create_and_push(MC_DATA_CMD_ID, MC_DATA(remove storage, INS_L(getVariableValueLocation(var))));
 
         if (var.comp_info.isParameter)
             context.paramStackCount--;
@@ -1424,13 +1522,37 @@ namespace conversion
                 }
                 else
                     ERROR("Unsupported! TODO FIX");
+                break;
             }
+            case 6:
+            {
+                rs_var_access_path& path = std::get<6>(value);
+
+                if (reg.operable)
+                {
+                    mc_command cmd = CommandFactory::getVariablePathValue(path).storeResult(
+                        PADR(score) MC_OPERABLE_REG(INS_L(STR(reg.id)))
+                    );
+                    
+                    add(cmd);
+                }
+                else
+                    ERROR("Unsupported! TODO FIX");
+
+                break;
+            }
+            default:
+                break;
         }
         return THIS;
     }
     mc_command            CommandFactory::getVariableValue (rs_variable& var)
     {
         return mc_command(false, MC_DATA_CMD_ID, MC_GET_VARIABLE_VALUE(var));
+    }
+    mc_command            CommandFactory::getVariablePathValue (rs_var_access_path& path)
+    {
+        return mc_command(false, MC_DATA_CMD_ID, MC_DATA(get storage, INS_L(path.toCompiledPath())));
     }
     std::shared_ptr<comparison_register> CommandFactory::compareNull   (const bool scoreboard, const std::string& where, const bool eq)
     {
@@ -1581,12 +1703,22 @@ namespace conversion
     CommandFactory::_This CommandFactory::createVariable   (rs_variable& var)
     {
         var.comp_info.belongingStackFrame = stackFrames.top();
-        create_and_push(MC_DATA_CMD_ID,
-                MC_DATA(modify storage, INS(RS_STORAGE_LOCATOR(var)))
+        if (var.comp_info.isParameter)
+        {
+            create_and_push(MC_DATA_CMD_ID,
+                MC_DATA(modify storage, RS_PROGRAM_PARAMETERS)
+                    PAD(merge value)
+                MC_PARAMETER_JSON_DEFAULT(VAR_ID(var))
+                        );
+        }else
+        {
+            create_and_push(MC_DATA_CMD_ID,
+                MC_DATA(modify storage, RS_PROGRAM_VARIABLES)
                     PAD(append value)
                 MC_VARIABLE_JSON_DEFAULT(std::to_string(var.scope),
                                         std::to_string(var.type_info.type_id))
                         );
+        }
         setVariableCompilerID(var);
         return THIS;
     }
@@ -1606,20 +1738,21 @@ namespace conversion
                 return "0";
         }
     }
-    std::string           CommandFactory::accessList       (const std::vector<size_t>& indicies)
+    std::string           CommandFactory::accessList       (rs_variable& var, const std::vector<size_t>& indicies)
     {
         std::string path = RS_PROGRAM_VARIABLES;
         for(size_t i = 0; i < indicies.size(); i++)
         {
             size_t pathIndex = indicies.at(i);
-            if (i == 0)
+            if (i == 0 && !var.comp_info.isParameter)
                 path += '[' + std::to_string(pathIndex) + "].value";
             else if (i % 2 != 0)
                 path += '[' + std::to_string(pathIndex) + ']';
             else
                 path += "." + std::to_string(pathIndex);
+
+            
         }
-        if (indicies.size() == 1) path += ".value";
 
         return path;
     }
@@ -1657,7 +1790,7 @@ namespace conversion
                         c.quoteIfStr();
 
                         addField(index, c.val);
-
+                        
                         break;
                     }
                     case 1:
@@ -1666,7 +1799,7 @@ namespace conversion
                         
                         if(reg.operable)
                         {
-                            mc_command assign(false, MC_DATA_CMD_ID, MC_DATA(modify storage, INS(accessList(indicies)))
+                            mc_command assign(false, MC_DATA_CMD_ID, MC_DATA(modify storage, INS(accessList(var, indicies)))
                                                     PAD(append from score) MC_OPERABLE_REG(INS_L(STR(reg.id)))
                                             );
                             initCommands.push_back(assign);
@@ -1674,7 +1807,7 @@ namespace conversion
                         else
                         {
                             // TODO FIX
-                            mc_command assign(false, MC_DATA_CMD_ID, MC_DATA(modify storage, INS(accessList(indicies)))
+                            mc_command assign(false, MC_DATA_CMD_ID, MC_DATA(modify storage, INS(accessList(var, indicies)))
                                                     PAD(append from storage) MC_NOPERABLE_REG(reg.id)
                                         );
                             initCommands.push_back(assign);
@@ -1689,7 +1822,7 @@ namespace conversion
                         // insert null, and append (move code to below).
                         rs_variable& v = *std::get<2>(*value);
 
-                        mc_command assign(false, MC_DATA_CMD_ID, MC_DATA(modify storage, INS(accessList(indicies)))
+                        mc_command assign(false, MC_DATA_CMD_ID, MC_DATA(modify storage, INS(accessList(var, indicies)))
                                                     PAD(append from storage) MC_VARIABLE_VALUE_FULL(v)
                                         );
                         initCommands.push_back(assign);
@@ -1724,16 +1857,25 @@ namespace conversion
         f.pop_back();
         if (create)
         {
-        create_and_push(MC_DATA_CMD_ID,
-            MC_DATA(modify storage, RS_PROGRAM_VARIABLES)
-                PAD(append value)
-            MC_VARIABLE_JSON_VAL(f, std::to_string(var.scope),
+            if (var.comp_info.isParameter)
+            {
+                create_and_push(MC_DATA_CMD_ID,
+                        MC_DATA(modify storage, RS_PROGRAM_PARAMETERS)
+                            PAD(merge value)
+                        MC_PARAMETER_JSON_VAL(VAR_ID(var), f));
+            }
+            else
+            {
+                create_and_push(MC_DATA_CMD_ID,
+                        MC_DATA(modify storage, RS_PROGRAM_VARIABLES)
+                            PAD(append value)
+                        MC_VARIABLE_JSON_VAL(f, std::to_string(var.scope),
                                         std::to_string(var.type_info.type_id))
                         );
+            }
         }
         else
             create_and_push(MC_DATA_CMD_ID, MC_VARIABLE_SET_CONST(var, f));
-
         // add all commands after we init
         for (auto& cmd : initCommands) add(cmd);
 
@@ -1765,12 +1907,23 @@ namespace conversion
 
                 rbc_constant& c = std::get<0>(val);
                 c.quoteIfStr();
-                create_and_push(MC_DATA_CMD_ID,
-                    MC_DATA(modify storage, RS_PROGRAM_VARIABLES)
-                        PAD(append value)
+                if (var.comp_info.isParameter)
+                {
+                    create_and_push(MC_DATA_CMD_ID,
+                    MC_DATA(modify storage, RS_PROGRAM_PARAMETERS)
+                        PAD(merge value)
+                    MC_PARAMETER_JSON_VAL(VAR_ID(var), c.val)
+                                );
+                }
+                else
+                {
+                    create_and_push(MC_DATA_CMD_ID,
+                        MC_DATA(modify storage, RS_PROGRAM_VARIABLES)
+                            PAD(append value)
                     MC_VARIABLE_JSON_VAL(c.val, std::to_string(var.scope),
                                                 std::to_string(var.type_info.type_id))
                                 );
+                }
                 break;
             }
             case 1:
@@ -1814,6 +1967,27 @@ namespace conversion
     }
     CommandFactory::_This CommandFactory::op_reg_math      (rbc_register& reg, rbc_value& val, bst_operation_type t)
     {
+        auto operate = [&]()
+        {
+            sharedt<rbc_register> rhReg = rbc_compiler.getFreeRegister(true);
+            if (!rhReg)
+                rhReg = rbc_compiler.makeRegister(true);
+            setRegisterValue(*rhReg, val);
+            const std::string opStr = operationTypeToStr(t) + '=';
+            switch(t)
+            {
+                case bst_operation_type::MUL:
+                case bst_operation_type::DIV:
+                case bst_operation_type::MOD:
+                case bst_operation_type::XOR:
+                {
+                    create_and_push(MC_SCOREBOARD_CMD_ID, MC_REG_OPERATE(reg.id, opStr, rhReg->id));
+                    break;
+                }
+                default:
+                    ERROR("Unknown/Unsupported math operation between register and constant.");
+            }
+        };
         switch(val.index())
         {
             case 0:
@@ -1833,24 +2007,7 @@ namespace conversion
                     create_and_push(MC_SCOREBOARD_CMD_ID, MC_REG_DECREMENT_CONST(reg.id, c.val));
                     return THIS;
                 }
-                sharedt<rbc_register> rhReg = rbc_compiler.getFreeRegister(true);
-                if (!rhReg)
-                    rhReg = rbc_compiler.makeRegister(true);
-                setRegisterValue(*rhReg, val);
-                const std::string opStr = operationTypeToStr(t) + '=';
-                switch(t)
-                {
-                    case bst_operation_type::MUL:
-                    case bst_operation_type::DIV:
-                    case bst_operation_type::MOD:
-                    case bst_operation_type::XOR:
-                    {
-                        create_and_push(MC_SCOREBOARD_CMD_ID, MC_REG_OPERATE(reg.id, opStr, rhReg->id));
-                        break;
-                    }
-                    default:
-                        ERROR("Unknown/Unsupported math operation between register and constant.");
-                }
+                operate();                
                 break;
             }
             case 1:
@@ -1861,6 +2018,9 @@ namespace conversion
             {
                 break;
             }
+            case 6:
+                operate();
+                break;
             default:
                 ERROR("Register cannot store unsupported value.");
                 return THIS;
@@ -1881,6 +2041,7 @@ namespace conversion
                 break;
             }
             case 2:
+            case 6:
             {
                 switch(rhs.index())
                 {

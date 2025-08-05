@@ -61,17 +61,64 @@ rs_var_access_path rbc_parser::parse_var_path_access(std::shared_ptr<rs_variable
     {
         if (equals(token_type::SQBRACKET_OPEN))
         {
-            adv(); // for better errors
+            adv();
             if (equals(token_type::SQBRACKET_CLOSED))
                 COMP_ERROR(RS_SYNTAX_ERROR, "Expected integer constant.");
-            if (!equals(token_type::INT_LITERAL))
-                COMP_ERROR(RS_SYNTAX_ERROR, "Indexing arrays can only be done with integer constants. use array::at() to access an array via variables or other.");
+            
+            // i need to fix these stupid fucking boolean params
+            rs_expression index = expreval(false, false, false, true, true);
+
+            if ((index.nonOperationalResult || !index.operation.isSingular()) && !index.macro)
+                COMP_ERROR(RS_SYNTAX_ERROR, "Accessing a list via a non constant value is not allowed. You can use macros to insert variable values, but not whole expressions.");
 
             if (currentType.array_count <= 0)
                 COMP_ERROR(RS_SYNTAX_ERROR, "Cannot index value of non list type (evaldT={})", currentType.tostr());
             currentType = currentType.element_type();
 
-            path.segments.push_back(rs_var_access_path_item{rbc_constant(token_type::INT_LITERAL, currentToken->repr), true});
+            if (index.nonOperationalResult)
+                COMP_ERROR(RS_SYNTAX_ERROR, "Unexpected constant value in use of macro. Macros expect a reference to a variable or usage of such.");
+            // its a singular expression, assert type must be integer if not macro, and must be variable if macro.
+            if (index.operation.isSingular())
+            {
+                auto& l = std::get<1>(*index.operation.left);
+                bool isMacro = index.macro || index.operation.leftIsMacro;
+
+                if (l.index())
+                {
+                    // var access path
+                    if (!index.operation.leftIsMacro)
+                        COMP_ERROR(RS_SYNTAX_ERROR, "Cannot access list at non constant like value.");
+                    path.segments.push_back(rs_var_access_path_item{std::make_shared<rs_var_access_path>(std::get<1>(l)), true});
+
+                }
+                else
+                {
+                    // constant or varaible
+                    auto& _const = std::get<0>(l);
+
+                    if (_const.type == token_type::WORD)
+                    {
+                        // variable
+                        if (!isMacro)
+                            COMP_ERROR(RS_SYNTAX_ERROR, "Cannot access list at non constant like value.");
+
+                        std::shared_ptr<rs_variable> v = program.getVariable(_const.repr, true);
+                        if (!v || !v->_const)
+                            COMP_ERROR(RS_SYNTAX_ERROR, "Due to current limitations, macros can only be used on const-defined parameters. See the docs to learn more about macros.");
+
+                        path.segments.push_back(rs_var_access_path_item{program.getVariable(_const.repr), true});
+                    }
+                    else if (_const.type == token_type::INT_LITERAL && !index.macro && !index.operation.leftIsMacro)
+                        path.segments.push_back(rs_var_access_path_item{rbc_constant(token_type::INT_LITERAL, _const.repr), true});
+                    else
+                        COMP_ERROR(RS_SYNTAX_ERROR, "Indexing arrays can only be done with integer constants. use array::at() or macros to access an array via variables or other.");
+                }
+
+            }
+            else
+            {
+                COMP_ERROR(RS_SYNTAX_ERROR, "Expressions are unsupported in macros.");
+            }
             adv();
 
             expect(token_type::SQBRACKET_CLOSED);
@@ -80,20 +127,31 @@ rs_var_access_path rbc_parser::parse_var_path_access(std::shared_ptr<rs_variable
         {
             COMP_ERROR(RS_UNSUPPORTED_OPERATION_ERROR, "Object accessing has yet to be implemented.");
         }
-        else break;
 
         token* t;
-        if ((t = peek()) && t->type == token_type::LINE_END)
-            break;
+        if (!(t = peek()))
+            COMP_ERROR(RS_EOF_ERROR, "Unexpected EOF.");
+        
+        switch(t->type)
+        {
+            case token_type::SQBRACKET_OPEN:
+            case token_type::OBJECT_ACCESS_OPERATOR:
+                break;
+            default:
+                goto _break; // exit func
+        }
 
         adv();
     }
+_break:
     path.evaluatedType = currentType;
     return path;
 }
 bst_operation<token>         rbc_parser::make_bst         (bool br, bool oneNode, bool obj)
 {
     bst_operation<token> root;
+    bool                 isCurrentNodeMacro = false;
+
     do
     {
         switch (currentToken->type)
@@ -122,10 +180,9 @@ bst_operation<token>         rbc_parser::make_bst         (bool br, bool oneNode
         {
             adv();
             bst_operation<token> child = make_bst(true, false);
-
+            
             if (!root.assignNext(child))
                 COMP_ERROR(RS_SYNTAX_ERROR, "Missing operator.");
-            // _At ++;
             if (oneNode)
                 return root;
             break;
@@ -143,6 +200,55 @@ bst_operation<token>         rbc_parser::make_bst         (bool br, bool oneNode
 
             break;
         }
+        case token_type::MACRO_OPERATOR:
+        {
+            // $(x) == $x
+            // $(x) + 4
+            if (!program.currentFunction)
+                COMP_ERROR(RS_SYNTAX_ERROR, "Macros are only allowed in a function body.");
+
+            isCurrentNodeMacro = true;
+            token* next;
+            if ((next = peek()) && next->type != token_type::BRACKET_OPEN)
+            {
+                adv();
+                expect(token_type::WORD);
+
+                goto _parsevar;
+            }
+            else
+            {
+                bst_operation<token> child = make_bst(true, false);
+            
+                if (!child.isSingular())
+                    COMP_ERROR(RS_SYNTAX_ERROR, "Macro expressions are not supported.");
+
+                auto& v = std::get<1>(*child.left);
+
+                if (!v.index())
+                {
+                    auto& tok = std::get<0>(v);
+                    if (tok.type != token_type::WORD)
+                        COMP_ERROR(RS_SYNTAX_ERROR, "Macros only support variable usage.");
+
+                    auto var = program.getVariable(tok.repr, true);
+
+                    // can't preform goto
+                    if (var->_const)
+                        COMP_ERROR(RS_SYNTAX_ERROR, "Due to current limitations, macros can only be used on const-defined parameters. See the docs to learn more about macros.");
+                    
+                    program.currentFunction->addMacroDefinition(var);
+                } else // TODO ADD SUPPORT
+                    COMP_ERROR(RS_SYNTAX_ERROR, "Converting a variable's path to a macro insersion is not yet supported.");
+
+                if (!root.assignNext(child))
+                    COMP_ERROR(RS_SYNTAX_ERROR, "Missing operator.");
+                if (oneNode)
+                    return root;
+                break;
+            }
+            break;
+        }
         case token_type::INT_LITERAL:
         case token_type::FLOAT_LITERAL:
         case token_type::STRING_LITERAL:
@@ -153,22 +259,38 @@ bst_operation<token>         rbc_parser::make_bst         (bool br, bool oneNode
         {
             if (currentToken->type == token_type::WORD)
             {
+            _parsevar:
                 sharedt<rs_variable> v;
-                if (!(v = program.getVariable(currentToken->repr)))
-                    COMP_ERROR(RS_SYNTAX_ERROR, "Unexpected token in expression.");
+                if (!(v = program.getVariable(currentToken->repr, isCurrentNodeMacro)))
+                {
+                    if (isCurrentNodeMacro)
+                        goto __macroError;
 
+                    COMP_ERROR(RS_SYNTAX_ERROR, "Unexpected token in expression.");
+                }
+                if (!v->_const && isCurrentNodeMacro)
+                {
+            __macroError:
+                    COMP_ERROR(RS_SYNTAX_ERROR, "Due to current limitations, macros can only be used on const-defined parameters. See the docs to learn more about macros.");
+                }
                 if (!follows(token_type::SQBRACKET_OPEN) && !follows(token_type::OBJECT_ACCESS_OPERATOR))
                 {
-                    if (!root.assignNext(*currentToken))
+                    if (!root.assignNext(*currentToken, isCurrentNodeMacro))
                         COMP_ERROR(RS_SYNTAX_ERROR, "Missing operator.");
+
+                    if(isCurrentNodeMacro)
+                        program.currentFunction->addMacroDefinition(v);
                 }
                 else
                 {
+                    if (isCurrentNodeMacro)
+                        COMP_ERROR(RS_SYNTAX_ERROR, "Converting a variable's path to a macro insersion is not yet supported.");
+                    // TODO ADD SUPPORT
                     rs_var_access_path path = parse_var_path_access(v);
                     path.fromVar = v;
-                    if(!root.assignNext(path))
+                    if(!root.assignNext(path, isCurrentNodeMacro))
                         COMP_ERROR(RS_SYNTAX_ERROR, "Missing operator.");
-                }    
+                }
             }
             else if (!root.assignNext(*currentToken))
                 COMP_ERROR(RS_SYNTAX_ERROR, "Missing operator.");
@@ -196,7 +318,8 @@ bst_operation<token>         rbc_parser::make_bst         (bool br, bool oneNode
                     COMP_ERROR(RS_SYNTAX_ERROR, "Unsupported operator.");
                 const int pLeft = operatorPrecedence(root.operation), pRight = operatorPrecedence(next->info);
 
-                _At += 2;
+                adv(2);
+
                 if (_At >= S)
                     COMP_ERROR(RS_SYNTAX_ERROR, "Expected expression, not EOF.");
                 // check if we are in a bracket, and advance to next token
@@ -227,9 +350,11 @@ bst_operation<token>         rbc_parser::make_bst         (bool br, bool oneNode
 
                     root = newRoot;
                 }
-                if(isBracketNode) _At++;
+                if(isBracketNode) adv();
             }
-            break;
+            
+            if (!br)
+                break;
         }
         
         if (resync() && currentToken->type == token_type::LINE_END)
@@ -249,12 +374,13 @@ void                         rbc_parser::prune_expr       (bst_operation<token>&
     // declared here for lambda simplicity
     token result;
 
-
     bool lSingle  = expr.left->index();
     bool rSingle = expr.right ? expr.right->index() : false;
+
+
 #pragma region expression_compute_methods
-    const static auto _impl_computeint =
-        [&](const token& left, const token& right)
+    const auto _impl_computeint =
+        [&expr, &result](const token& left, const token& right)
         {
             int r  = operator_compute(std::stoi(left.repr), expr.operation, std::stoi(right.repr));
             result.repr = std::to_string(r);
@@ -329,6 +455,7 @@ void                         rbc_parser::prune_expr       (bst_operation<token>&
                     rType.c_str());
             }
         }
+
         if(!result.repr.empty())
             expr.makeSingular(result);
     }
@@ -351,12 +478,12 @@ void                         rbc_parser::prune_expr       (bst_operation<token>&
         if (expr.left->index() && expr.right && expr.right->index())
             prune_expr(expr);
     }
-    
 }
-rs_expression                rbc_parser::expreval         (bool br, bool lineEnd, bool obj, bool prune)
+rs_expression                rbc_parser::expreval         (bool br, bool lineEnd, bool obj, bool prune, bool oneNode)
 {
     rs_expression expr;
     token& current = *currentToken;
+
     if (current.type == token_type::CBRACKET_OPEN)
     {
         // parse object
@@ -376,7 +503,23 @@ rs_expression                rbc_parser::expreval         (bool br, bool lineEnd
         expr.nonOperationalResult = std::make_shared<rbc_value>(parselist());
         return expr;
     }
-    bst_operation<token> bst = make_bst(br, false, obj);
+    bst_operation<token> bst = make_bst(br, oneNode, obj);
+
+    if (bst.isSingular())
+    {
+        if (bst.leftIsMacro && expr.macro)
+            COMP_ERROR(RS_SYNTAX_ERROR, "Duplicate macro operator found before this expression.");
+        if (bst.leftIsMacro || expr.macro)
+        {
+            auto& v = std::get<1>(*bst.left);
+            if (!v.index())
+            {
+                auto& tok = std::get<0>(v);
+                if (tok.type != token_type::WORD)
+                    COMP_ERROR(RS_SYNTAX_ERROR, "The macro operator expects a variable-non-constant like expression.");
+            }
+        }
+    }
 
     if (lineEnd)
     {
@@ -860,6 +1003,10 @@ std::shared_ptr<rbc_function> rbc_parser::instantiateGenericFunction (const std:
     // [] <- C, 2, 4
     // b = C
     // [] <- G, C, 2, 4
+    // when this file was changed to be the current fragment to use,
+    // it was popped from the stack. we push the ptr again to let it be 
+    // set again using the second call of useNextFile() below.
+    files.push_front(program.currentFragment);
     files.push_front(copiedFunc->generics->fromFragment);
 
     useNextFile();
@@ -878,6 +1025,8 @@ std::shared_ptr<rbc_function> rbc_parser::instantiateGenericFunction (const std:
 
     _At                  = beforeAt;
     program.currentScope = oldScope; 
+
+    resync(); // new 
 
     program.currentFunction = nullptr;
     program.genericTypeConversions.clear();
@@ -953,10 +1102,10 @@ bool                         rbc_parser::callparse        (std::string& name,
             rs_type_info returnType = *function->returnType;
             
             if (returnType.generic)
-                returnType.assignType(generics.at(returnType.generic_id));
+                returnType.assignType(generics.at(returnType.generic_id), _providedGenericTypes);
 
             if (!returnType.equals(*expectedReturnType))
-                COMP_ERROR(RS_SYNTAX_ERROR, "Return type of instantiated generic function does not match the type the expression was expecting.");
+                COMP_ERROR(RS_SYNTAX_ERROR, "Return type of instantiated generic function ({}) does not match the type the expression was expecting ({}).", returnType.tostr(), expectedReturnType->tostr());
         }
 
         auto& variations = function->generics->variations;
@@ -1073,9 +1222,10 @@ bool                         rbc_parser::callparse        (std::string& name,
             if (t.type_id == -1) // is null
                 COMP_ERROR(RS_SYNTAX_ERROR, "Could not infer all generic types through passed parameter types. Try calling the function by explicitly defining all generic types.");
         }
-        _providedGenericTypes = true;
-
         parseGenerics();
+
+        // assign after to allow for implicit return type assignment
+        _providedGenericTypes = true;
         
     }
 
@@ -1121,15 +1271,16 @@ bool                         rbc_parser::callparse        (std::string& name,
 }
 std::shared_ptr<rs_variable> rbc_parser::varparse         (token& name, bool needsTermination, bool parameter, bool obj, bool isConst)
 {
-    if (program.functions.find(name.repr) != program.functions.end()
-    || (program.currentFunction && program.currentFunction->name == name.repr))
-        COMP_ERROR_R(RS_SYNTAX_ERROR, "The name '{}' already exists as a function.", nullptr, name.repr);
+    // useless ahh error
+
+    // if (program.functions.find(name.repr) != program.functions.end()
+    // || (program.currentFunction && program.currentFunction->name == name.repr))
+    //     COMP_ERROR_R(RS_SYNTAX_ERROR, "The name '{}' already exists as a function.", nullptr, name.repr);
     std::shared_ptr<rs_variable> variable = program.getVariable(name.repr);
     // if we access the variable like v[0].b = ...
     std::shared_ptr<rs_var_access_path> accessingPath = nullptr;
-    bool exists = (bool)variable; // && variable->scope == program.currentScope
+    bool exists = (bool)variable && variable->scope == program.currentScope; // && variable->scope == program.currentScope
     
-// _eval:
     if (currentToken->info != ':')
     {
         if (!exists)
@@ -1141,6 +1292,7 @@ std::shared_ptr<rs_variable> rbc_parser::varparse         (token& name, bool nee
                 COMP_ERROR(RS_SYNTAX_ERROR, "Accessing a list/object variable is not allowed here.");
             
             accessingPath = std::make_shared<rs_var_access_path>(parse_var_path_access(variable));
+            adv();
             if (equals(token_type::LINE_END))
                 return variable;
         }
@@ -1311,7 +1463,6 @@ _skip_type:
 
                 }
             }
-            
         }
         else if (!obj)
         {
@@ -1320,6 +1471,10 @@ _skip_type:
             // list
             if (result.index() == 4)
             {
+                // this is the stupidest solution to a problem ever.
+                // for some reason, lists end parsing at ']', which they should, but this function expects a ';'
+                // and expreval can end parsing at ';' so no adv needed (hence comment out below)
+                adv();
                 if (typeInfo.array_count == 0)
                     COMP_ERROR(RS_SYNTAX_ERROR, "Cannot assign list-instance to a non-list typed variable.");
             }
@@ -1653,6 +1808,7 @@ void                         rbc_parser::parseCurrent     ()
         program.currentFunction->generics   = generics;
         program.currentFunction->scope      = program.currentScope;
         program.currentFunction->returnType = std::make_shared<rs_type_info>(retType);
+        program.currentFunction->fromFragment = program.currentFragment;
         program.scopeStack.push(rbc_scope_type::FUNCTION);
 
         if (program.currentModule)

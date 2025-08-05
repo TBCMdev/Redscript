@@ -20,6 +20,7 @@
 
 #include "types/project_fragment.hpp"
 #include "types/rs_var_access_path.hpp"
+#include "types/rs_macro_container.hpp"
 
 #include "type_info.hpp"
 #include "types.hpp"
@@ -43,9 +44,20 @@ struct rbc_command
     // defined outside due to forward decl
     std::string tostr();
     std::string toHumanStr();
+
+    bool operator == (const rbc_command& other) const
+    {
+        // maybe doesnt work due to ptrs?
+        return type == other.type && parameters == other.parameters;
+    }
+
 };
 
-
+struct rs_preprocessor_context
+{
+    std::vector<std::filesystem::path> visited;
+    std::unordered_map<std::string, token> aliases;
+};
 
 struct rbc_function_generics
 {
@@ -69,6 +81,7 @@ struct rbc_function
     size_t id = 0;
     std::unordered_map<std::string, rbc_func_var_t> localVariables;
     std::vector<std::shared_ptr<rs_variable>> parameters;
+    std::shared_ptr<project_fragment> fromFragment = nullptr;
     std::shared_ptr<rbc_function_generics> generics;
     std::shared_ptr<std::vector<rs_type_info>> assignedGenerics = nullptr;
     std::vector<rbc_command> instructions;
@@ -78,7 +91,12 @@ struct rbc_function
     std::vector<std::string> modulePath;
     std::shared_ptr<rbc_function> parent = nullptr;
     std::unordered_map<std::string, std::shared_ptr<rbc_function>> childFunctions;
+    std::shared_ptr<rs_macro_container> macroContainer = nullptr;
 
+    // used to verify if a function is actually generic, that being it has more
+    // than 1 variation and the instructions differ.
+    // assigned in assertGeneric().
+    bool verifiedGeneric = false;
     bool hasBody = true;
 
     rs_variable *getNthParameter(size_t p);
@@ -89,6 +107,9 @@ struct rbc_function
     std::string toSignatureStr();
     std::string fullName();
     std::string toHumanStr();
+    bool        assertGeneric();
+
+    void        addMacroDefinition(const std::shared_ptr<rs_variable>& var);
     function_locator locator();
     rbc_function(const std::string& _name) : name(_name)
     {}
@@ -115,6 +136,7 @@ struct rbc_program
     rbc_scope_type lastScope;
     std::shared_ptr<rs_module> currentModule = nullptr;
     std::shared_ptr<rbc_function> currentFunction = nullptr;
+    
     iterable_stack<std::shared_ptr<rbc_function>> functionStack;
     bool                                          _debug_infuncbody = false;
     iterable_stack<std::shared_ptr<rs_module>> moduleStack;
@@ -128,7 +150,7 @@ struct rbc_program
     std::vector<rs_type_info> genericTypeConversions;
 
 public:
-    sharedt<rs_variable>  getVariable(const std::string &name);
+    sharedt<rs_variable>  getVariable(const std::string &name, bool mustBeParameter = false);
     sharedt<rbc_register> getFreeRegister(bool operable = false);
     sharedt<rbc_register> makeRegister(bool operable = false, bool vacant = true);
 
@@ -176,7 +198,7 @@ namespace rbc_commands
 };
 
 void preprocess(token_list &, std::string, std::string &, rs_error *, fragment_ptr_deque &,
-                std::shared_ptr<std::vector<std::filesystem::path>> = nullptr);
+                std::shared_ptr<rs_preprocessor_context> = nullptr);
 
 namespace conversion
 {
@@ -314,13 +336,14 @@ namespace conversion
 
         std::shared_ptr<comparison_register> getFreeComparisonRegister();
         static mc_command makeCopyStorage(const std::string &dest, const std::string &src);
-        mc_command getVariableValue(rs_variable &var);
+        mc_command getVariableValue     (rs_variable &var);
+        mc_command getVariablePathValue (rs_var_access_path& path);
         static mc_command getRegisterValue(rbc_register &reg);
         static mc_command makeAppendStorage(const std::string &dest, const std::string &_const);
 
         static mc_command            getStackValue(long index);
         constexpr static std::string getTypedNullConstant(const rs_type_info& t);
-        static std::string           accessList(const std::vector<size_t>& indicies);
+        static std::string           accessList(rs_variable& var, const std::vector<size_t>& indicies);
 
         _This setRegisterValue(rbc_register &reg, rbc_value &c);
         _This setVariableValue(rs_variable &var, rbc_value &val);

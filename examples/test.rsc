@@ -1,9 +1,12 @@
 use lang;
 x: int = 4;
-z: int = 2;
+const z: int = 2;
+x = 4 + 4 + 4 + 4 + z;
+lis: int[] = [];
 
-// INT_KW_ID 1
-// token_type::INT_LITERAL
-y: int = x * (2 + 2);
+x = lis[4];
 
-msg(@r, y);
+// todo fix generic error, error in at func above, and add macro support where needed 
+lis[0] = 2;
+x = array::at(lis, 1);
+msg(@r, x); 

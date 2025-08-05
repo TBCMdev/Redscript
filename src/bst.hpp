@@ -98,6 +98,9 @@ struct bst_operation
 
     std::shared_ptr<_ValueT> left;
     std::shared_ptr<_ValueT> right;
+
+    bool leftIsMacro = false, rightIsMacro = false;
+
     bst_operation_type operation = bst_operation_type::NONE;
     inline void makeSingular(_Storage& s)
     {
@@ -110,41 +113,23 @@ struct bst_operation
     {
         return left && left->index() && !right && operation == bst_operation_type::NONE;
     }
-    inline bool assignNext(_Storage& s)
-    {
-        // TODO FIX
-        if (right) return false;
-
-        auto val = std::make_shared<_ValueT>(s);
-
-        if(left)
-            right = std::make_shared<_ValueT>(s);
-        else
-            left = std::make_shared<_ValueT>(s);
-
-        return true;
-    }
-    inline bool assignNext(const rs_var_access_path& s)
+    template<typename _Ty>
+    inline bool assignNext(const _Ty& t, bool isMacro = false)
     {
         if (right) return false;
 
-        auto val = std::make_shared<_ValueT>(s);
+        auto val = std::make_shared<_ValueT>(t);
 
         if(left)
-            right = std::make_shared<_ValueT>(s);
+        {
+            rightIsMacro = isMacro;
+            right = std::make_shared<_ValueT>(t);
+        }
         else
-            left = std::make_shared<_ValueT>(s);
-
-        return true;
-    }
-    inline bool assignNext(bst_operation<_Storage>& s)
-    {
-        if (right) return false;
-
-        if(left)
-            right = std::make_shared<_ValueT>(s);
-        else
-            left = std::make_shared<_ValueT>(s);
+        {
+            leftIsMacro = isMacro;
+            left = std::make_shared<_ValueT>(t);
+        }
 
         return true;
     }
