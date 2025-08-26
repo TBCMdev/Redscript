@@ -1,3 +1,6 @@
+type short = int;
+type long  = int;
+
 module types
 {
     /*

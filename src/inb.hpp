@@ -7,6 +7,7 @@
 #include "globals.hpp"
 #include "types/rbc_value.hpp"
 #include "type_info.hpp"
+#include "mc.hpp"
 
 // forward decls for rbc_value
 namespace conversion
@@ -93,17 +94,24 @@ namespace std {
     };
 }
 
+using _InbRetV = std::variant<rbc_value, mc_command>;
+using _InbRetT = std::shared_ptr<_InbRetV>;
+
 namespace inb_impls
 {
-    void msg(INB_IMPL_PARAMETERS);
-    void kill(INB_IMPL_PARAMETERS);
+    _InbRetT msg(INB_IMPL_PARAMETERS);
+    _InbRetT kill(INB_IMPL_PARAMETERS);
 
     namespace debug
     {
-        void print(INB_IMPL_PARAMETERS);
+        _InbRetT print(INB_IMPL_PARAMETERS);
     };
+    namespace time
+    {
+        _InbRetT now(INB_IMPL_PARAMETERS);
+    }
 
-    inline std::unordered_map<function_locator, void(*)(INB_IMPL_PARAMETERS)> INB_IMPLS_MAP = 
+    inline std::unordered_map<function_locator, _InbRetT(*)(INB_IMPL_PARAMETERS)> INB_IMPLS_MAP = 
     {
         {"msg", msg},
         {"kill", kill},
@@ -111,6 +119,7 @@ namespace inb_impls
 
 
         /* DEBUG LIB */
-        {{"debug", "print"}, debug::print}
+        {{"debug", "print"}, debug::print},
+        {{"time",  "now"  }, time::now}
     };
 }

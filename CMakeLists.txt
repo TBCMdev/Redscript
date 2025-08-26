@@ -28,7 +28,7 @@ add_library(redscript_types
 	src/types/rs_compilation_info.hpp
 	src/types/rs_expression.cpp
 	src/types/rs_list.hpp
-	src/types/rs_object.hpp
+	src/types/rs_object.cpp
 	src/types/rs_variable.cpp
 	src/types/rs_macro_container.cpp
 	src/types/rs_var_access_path.cpp
@@ -46,8 +46,8 @@ add_library(redscript_lib
 	src/parser.cpp
 	src/bst.cpp
 	src/type_info.cpp
+	src/getopt.c
 )
-
 add_executable(rscript entry.cpp)
 target_link_libraries(rscript PRIVATE redscript_lib)
 target_link_libraries(rscript PRIVATE redscript_types)

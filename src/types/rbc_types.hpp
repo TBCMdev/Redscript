@@ -59,7 +59,7 @@ enum class rbc_function_decorator
     EXTERN, // inbuilt functions
     SINGLE, // functions with 1 single call, redundant to compile.
     CPP,
-    NOCOMPILE,
+    COMPILE_TIME,
     NORETURN,
     WRAPPER,
     UNKNOWN

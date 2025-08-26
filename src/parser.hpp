@@ -13,7 +13,15 @@ struct rbc_parser_flags
 {
     bool parsingelif = false;
 };
+struct expr_eval_flags
+{
+    bool br = false;
+    bool lineEnd = true;
+    bool obj = false;
+    bool prune = true;
+    bool oneNode = false;
 
+};
 struct rbc_parser
 {
     token_list*      tokens;
@@ -41,11 +49,7 @@ struct rbc_parser
                                                bool obj = false);
     void                       prune_expr     (bst_operation<token>& expr);
     std::shared_ptr<rs_list>   parselist      ();
-    rs_expression              expreval       (bool br = false,
-                                               bool lineEnd = true,
-                                               bool obj = false,
-                                               bool prune = true,
-                                               bool oneNode = false);
+    rs_expression              expreval       (expr_eval_flags flags = {}, rs_type_info* hintedTypeInfo = nullptr);
                                    
     std::shared_ptr<rs_object> inlineobjparse ();
 #pragma endregion lang
@@ -89,6 +93,7 @@ struct rbc_parser
     // parses a type
     rs_type_info typeparse     ();
     rs_var_access_path parse_var_path_access(std::shared_ptr<rs_variable>& var);
+    rbc_value instantiationParse(rs_type_info* hintedType = nullptr);
                  
     
     bool         callparse     (std::string& name,
@@ -104,6 +109,7 @@ struct rbc_parser
 
     std::shared_ptr<rs_object>
                  objparse      (std::string& name);
+
 
     bool parsemoduleusage      (std::shared_ptr<rs_module> currentModule, rs_type_info* expectedReturnType = nullptr);
     

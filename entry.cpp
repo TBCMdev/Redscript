@@ -5,6 +5,10 @@
 #include "logger.hpp"
 #include "rbc.hpp"
 #include "config.hpp"
+
+// for getopt impl
+#define __GNU_LIBRARY__
+
 #ifdef _WIN32
 #include "getopt.h"
 #endif

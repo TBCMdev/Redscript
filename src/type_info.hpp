@@ -3,10 +3,13 @@
 #include <cstdint>
 #include <vector>
 #include <functional>
+#include <memory>
 #include <format>
 
 #include "constants.hpp"
 #include "globals.hpp"
+
+struct rs_object;
 
 struct rs_type_info
 {
@@ -20,10 +23,11 @@ struct rs_type_info
     bool    generic    = false;
     int32_t generic_id = -1;
 
-    std::vector<rs_type_info> otherTypes = {}; // others if specified
     //              arrOptional, arrStrict
-
     std::vector<std::pair<bool, bool>> arrayFlags = {};
+
+    std::shared_ptr<rs_object> fromObject = nullptr;
+
     std::string find_generic_type_name() const;
     inline std::string full_type_name() const
     {
@@ -44,58 +48,30 @@ struct rs_type_info
         }
         return ret;
     }
-    inline std::string type_name() const
-    {
-        if (generic)
-            return find_generic_type_name();
-        switch(type_id)
-        {
-            case RS_INT_KW_ID:
-                return "int";
-            case RS_STRING_KW_ID:
-                return "string";
-            case RS_FLOAT_KW_ID:
-                return "float";
-            case RS_BOOL_KW_ID:
-                return "bool";
-            case RS_OBJECT_KW_ID:
-                return "object";
-            default:
-                return "unknown";
-        }
-    }
+    std::string type_name() const;
     inline static std::string type_name(int32_t id)
     {
         return rs_type_info{id, 0}.type_name();
     }
     inline std::string tostr() const
     {
-        std::string typestr = full_type_name();
-        
-        for(size_t i = 0; i < otherTypes.size(); i++)
-            typestr += '|' + otherTypes.at(i).tostr();
-
-        // if (array_count != 0)
-        //     typestr += '[' + std::to_string(array_count) + ']';  
-            
-        
-        return typestr;
+        return full_type_name();
     }
     inline rs_type_info parent_type(bool op = false, bool ref = false) const
     {
         auto flagsCopy = arrayFlags;
         flagsCopy.push_back({op, ref});
 
-        return rs_type_info{type_id, array_count + 1, optional, reference, generic, generic_id, otherTypes, flagsCopy};
+        return rs_type_info{type_id, array_count + 1, optional, reference, generic, generic_id, flagsCopy, fromObject};
     }
     inline rs_type_info element_type() const
     {
         if (array_count == 0) return *this;
-        if (array_count == 1) return rs_type_info{type_id, 0, optional, reference, generic, generic_id, otherTypes, {}};
+        if (array_count == 1) return rs_type_info{type_id, 0, optional, reference, generic, generic_id, {}, fromObject};
 
         // if (flagsCopy.size() > 0)
             // flagsCopy.pop_back();
-        return rs_type_info{type_id, array_count - 1, optional, reference, generic, generic_id, otherTypes, arrayFlags};
+        return rs_type_info{type_id, array_count - 1, optional, reference, generic, generic_id, arrayFlags, fromObject};
     }
     inline bool compareArrayFlags(const rs_type_info& other) const
     {
@@ -171,25 +147,23 @@ struct rs_type_info
         // T[] int[]
         bool likemindedTypes = !_explicit 
             && generic 
-            && t.array_count >= array_count;
+            && t.array_count == array_count;
 
-        if (likemindedTypes)
-        {
-            // We are in the case: param = T[], arg = int[] -> T = int
-            type_id = t.type_id;
-            // Keep the generic identity
-            generic = t.generic;
-            generic_id = t.generic_id;
-            return;
-        }
-
-        // Otherwise, assign the type directly
-        array_count += t.array_count;
-        if (t.arrayFlags.size() > 0)
-            arrayFlags.insert(arrayFlags.begin(), t.arrayFlags.begin(), t.arrayFlags.end());
-        
         type_id = t.type_id;
-
+        fromObject = t.fromObject;
+        if (!likemindedTypes)
+        {
+            // Otherwise, assign the type directly
+            array_count += t.array_count;
+            if (t.arrayFlags.size() > 0)
+                arrayFlags.insert(arrayFlags.begin(), t.arrayFlags.begin(), t.arrayFlags.end());
+            
+        }
+        else
+        {
+            array_count = 0;
+            arrayFlags.clear();
+        }
         // T? -> int[]?
         // T?[] -> int?[]?
         if (array_count > 0 && optional && t.isFinallyOptional())
@@ -218,7 +192,6 @@ struct std::formatter<std::vector<rs_type_info>> : std::formatter<std::string> {
         return std::formatter<std::string>::format(out, ctx);
     }
 };
-// holy jesus
 namespace std {
     template<>
     struct hash<rs_type_info> {
@@ -230,9 +203,7 @@ namespace std {
             hash_combine(h, type.reference);
             hash_combine(h, type.generic);
             hash_combine(h, type.generic_id);
-            for (const auto& other : type.otherTypes) {
-                hash_combine(h, std::hash<rs_type_info>{}(other));
-            }
+            hash_combine(h, type.fromObject.get());
             return h;
         }
 

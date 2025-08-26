@@ -15,7 +15,7 @@ struct rs_compilation_info
 
 
 
-    inline short get_stackframe_id()
+    inline short get_stackframe_id() const
     {
         return belongingStackFrame ? belongingStackFrame->id : 0;
     }

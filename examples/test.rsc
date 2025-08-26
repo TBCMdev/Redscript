@@ -1,12 +1,13 @@
 use lang;
-x: int = 4;
-const z: int = 2;
-x = 4 + 4 + 4 + 4 + z;
-lis: int[] = [];
+lis: int[] = [4];
+x: int = lis[0];
 
-x = lis[4];
+z: int = (x + 4);
+msg(@r, -(x + 4));
+msg(@r, -(x + 4));
 
-// todo fix generic error, error in at func above, and add macro support where needed 
-lis[0] = 2;
-x = array::at(lis, 1);
-msg(@r, x); 
+if (x != 0)
+{
+    msg(@r, "Yes they equal");
+}
+

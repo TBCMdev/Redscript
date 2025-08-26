@@ -29,6 +29,7 @@
     {"required", {token_type::KW_REQUIRED,0}}, \
     {"seperate", {token_type::KW_SEPERATE,0}}, \
     {"alias", {token_type::KW_ALIAS,0}}, \
+    {"new", {token_type::KW_INSTANTIATE_OPERATOR,0}}, \
     {"type", {token_type::KW_TYPE,0}}, \
     {"for", {token_type::KW_FOR,0}}, \
     {"while", {token_type::KW_WHILE,0}}, \

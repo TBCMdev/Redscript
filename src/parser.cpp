@@ -11,46 +11,10 @@
 #include "types/rbc_types.hpp"
 
 #pragma region lang
-
+// @deprecated
 std::shared_ptr<rs_object>   rbc_parser::inlineobjparse   ()
 {
-    rs_object obj;
-    while(adv())
-    {
-        token& name = *currentToken;
-        if (name.type == token_type::CBRACKET_CLOSED)
-            break;
-        if (name.type != token_type::WORD)
-            COMP_ERROR(RS_SYNTAX_ERROR, "Unexpected token.");
-        if (obj.members.find(name) != obj.members.end())
-            COMP_ERROR(RS_SYNTAX_ERROR, "Duplicate object field.");
-
-        adv();
-        token& sep = *currentToken;
-        if (sep.type != token_type::SYMBOL || sep.info != ':')
-            COMP_ERROR(RS_SYNTAX_ERROR, "Expected ':'.");
-
-        adv();
-
-        rs_expression value = expreval(false, false, true);
-        if (value.nonOperationalResult)
-            adv();
-
-        rs_variable var(name, program.currentScope);
-        var.value = std::make_shared<rs_expression>(value);
-        obj.members.insert({name.repr, {var, rs_object_member_decorator::OPTIONAL}});
-
-        token& terminator = *currentToken;
-        if (terminator.type == token_type::CBRACKET_CLOSED)
-            break;
-        if (terminator.type != token_type::SYMBOL || terminator.info != ',')
-            COMP_ERROR(RS_SYNTAX_ERROR, "Expected object field seperator or '}'.");
-    }
-    if (!peek())
-        COMP_ERROR(RS_SYNTAX_ERROR, "Unterminated object definition.");
-
-    return std::make_shared<rs_object>(obj);
-    
+    return nullptr;
 }
 // called at index of first access token
 rs_var_access_path rbc_parser::parse_var_path_access(std::shared_ptr<rs_variable>& var)
@@ -65,8 +29,7 @@ rs_var_access_path rbc_parser::parse_var_path_access(std::shared_ptr<rs_variable
             if (equals(token_type::SQBRACKET_CLOSED))
                 COMP_ERROR(RS_SYNTAX_ERROR, "Expected integer constant.");
             
-            // i need to fix these stupid fucking boolean params
-            rs_expression index = expreval(false, false, false, true, true);
+            rs_expression index = expreval({false, false, false, true, true});
 
             if ((index.nonOperationalResult || !index.operation.isSingular()) && !index.macro)
                 COMP_ERROR(RS_SYNTAX_ERROR, "Accessing a list via a non constant value is not allowed. You can use macros to insert variable values, but not whole expressions.");
@@ -125,7 +88,17 @@ rs_var_access_path rbc_parser::parse_var_path_access(std::shared_ptr<rs_variable
         }
         else if (equals(token_type::OBJECT_ACCESS_OPERATOR))
         {
-            COMP_ERROR(RS_UNSUPPORTED_OPERATION_ERROR, "Object accessing has yet to be implemented.");
+            adv();
+            expect(token_type::WORD);
+            std::string member = currentToken->repr;
+            if (!currentType.fromObject)
+                COMP_ERROR(RS_SYNTAX_ERROR, "Evaluated type of {} does not equal object like type.", currentType.tostr());
+            
+            if (!currentType.fromObject->hasMember(member))
+                COMP_ERROR(RS_SYNTAX_ERROR, "Object type {} does not have member '{}'.", currentType.tostr(), member);
+            currentType = currentType.fromObject->getMember(member)->first->type_info;
+            path.segments.push_back(rs_var_access_path_item{rbc_constant(token_type::STRING_LITERAL, member), false});
+            
         }
 
         token* t;
@@ -183,7 +156,8 @@ bst_operation<token>         rbc_parser::make_bst         (bool br, bool oneNode
             
             if (!root.assignNext(child))
                 COMP_ERROR(RS_SYNTAX_ERROR, "Missing operator.");
-            if (oneNode)
+            token* t = nullptr;
+            if (oneNode || ((t = peek()) && t->type == token_type::LINE_END))
                 return root;
             break;
         }
@@ -197,7 +171,6 @@ bst_operation<token>         rbc_parser::make_bst         (bool br, bool oneNode
 
             if (!root.setOperation(op))
                 COMP_ERROR(RS_SYNTAX_ERROR, "Unsupported operator.");
-
             break;
         }
         case token_type::MACRO_OPERATOR:
@@ -273,6 +246,10 @@ bst_operation<token>         rbc_parser::make_bst         (bool br, bool oneNode
             __macroError:
                     COMP_ERROR(RS_SYNTAX_ERROR, "Due to current limitations, macros can only be used on const-defined parameters. See the docs to learn more about macros.");
                 }
+
+                if (obj)
+                    COMP_ERROR(RS_SYNTAX_ERROR, "Cannot assign variadic expression or variable to object field in object schema.");
+                    
                 if (!follows(token_type::SQBRACKET_OPEN) && !follows(token_type::OBJECT_ACCESS_OPERATOR))
                 {
                     if (!root.assignNext(*currentToken, isCurrentNodeMacro))
@@ -292,8 +269,11 @@ bst_operation<token>         rbc_parser::make_bst         (bool br, bool oneNode
                         COMP_ERROR(RS_SYNTAX_ERROR, "Missing operator.");
                 }
             }
-            else if (!root.assignNext(*currentToken))
-                COMP_ERROR(RS_SYNTAX_ERROR, "Missing operator.");
+            else 
+            {
+                if (!root.assignNext(*currentToken))
+                    COMP_ERROR(RS_SYNTAX_ERROR, "Missing operator.");
+            }
             token* t = nullptr;
             if (oneNode || ((t = peek()) && t->type == token_type::LINE_END))
                 return root;
@@ -382,7 +362,13 @@ void                         rbc_parser::prune_expr       (bst_operation<token>&
     const auto _impl_computeint =
         [&expr, &result](const token& left, const token& right)
         {
-            int r  = operator_compute(std::stoi(left.repr), expr.operation, std::stoi(right.repr));
+            int r  = operator_compute<int>(std::stoi(left.repr), expr.operation, std::stoi(right.repr));
+            result.repr = std::to_string(r);
+        };
+    const auto _impl_computefloat =
+        [&expr, &result](const token& left, const token& right)
+        {
+            float r  = operator_compute<float>(std::stof(left.repr), expr.operation, std::stof(right.repr));
             result.repr = std::to_string(r);
         };
 #pragma endregion expression_compute_methods
@@ -409,9 +395,20 @@ void                         rbc_parser::prune_expr       (bst_operation<token>&
                     _impl_computeint(left, right);
                     break;
                 }
-                default:
-                    WARN("No supported operation of same type (T=%s)", tutil::type_to_str(left.type).c_str());
+                case token_type::FLOAT_LITERAL:
+                {
+                    _impl_computefloat(left, right);
                     break;
+                }
+                case token_type::STRING_LITERAL:
+                {
+                    result.repr = left.repr + right.repr;
+                    break;
+                }
+                default:
+                    // prune failed.
+                    // WARN("No supported operation of same type (T=%s)", tutil::type_to_str(left.type).c_str());
+                    return;
             }
         }
         else
@@ -422,13 +419,14 @@ void                         rbc_parser::prune_expr       (bst_operation<token>&
             {
                 // DEPRECATED -- TODO REMOVE -- NO MATH WITH NULL KEYWORD ALLOWED
                 // because we are adding to null, we just return the number we are adding as null = 0
-                // { {token_type::KW_NULL, token_type::INT_LITERAL} , [&result](UNUSED const token& lhs, const token& rhs)
-                //     { 
-                //         // must assign result a trace object, as well as type of rhs (int)
-                //         result = rhs;
-                //         result.repr = rhs.repr;
-                //     }
-                // }
+                { {token_type::INT_LITERAL, token_type::FLOAT_LITERAL} , [&](UNUSED const token& lhs, const token& rhs)
+                    { 
+                        // must assign result a trace object, as well as type of rhs (int)
+                        result = rhs; // it converts to float
+                        result.repr = std::to_string(operator_compute<float>(std::stoi(lhs.repr), expr.operation, std::stof(rhs.repr)));
+                        
+                    }
+                }
             };
 
             bool found = combinationCommutativeEquals(left.type, right.type, left, right, map);
@@ -479,7 +477,104 @@ void                         rbc_parser::prune_expr       (bst_operation<token>&
             prune_expr(expr);
     }
 }
-rs_expression                rbc_parser::expreval         (bool br, bool lineEnd, bool obj, bool prune, bool oneNode)
+rbc_value                    rbc_parser::instantiationParse (rs_type_info* hintedType)
+{
+    // bool implicit = true;
+    adv();
+    
+    token_type currentType = currentToken->type;
+    std::string constructorName = currentToken->repr;
+    
+    std::shared_ptr<rs_object> constructor = nullptr; 
+    
+    switch (currentType)
+    {
+        case token_type::TYPE_DEF:
+        {
+            COMP_ERROR(RS_SYNTAX_ERROR, "Unsupported type constructor '{}'.", constructorName);
+            break;
+        }
+        case token_type::WORD:
+        {
+            // implicit = false;
+            auto obj = program.objectTypes.find(constructorName);
+            if (obj == program.objectTypes.end())
+                COMP_ERROR(RS_SYNTAX_ERROR, "Unknown constructor '{}'.", constructorName);
+
+            adv();
+            expect(token_type::BRACKET_OPEN);
+
+            constructor = obj->second;
+            break;
+        }
+        case token_type::BRACKET_OPEN:
+        {
+            if (!hintedType || !hintedType->fromObject)
+                COMP_ERROR(RS_SYNTAX_ERROR, "Cannot deduce constructor in this specific context. Specify the constructor name.");
+            constructor = hintedType->fromObject;
+            break;
+        }
+        default:
+            COMP_ERROR(RS_SYNTAX_ERROR, "Unknown constructor '{}'.", constructorName);
+    }
+
+    adv();
+    std::unordered_map<std::string, rbc_value> values;
+    constructor->generateDefaultValues(values);
+    size_t parameterCount = 0;
+    size_t unorderedParameterCount = 0;
+    expr_eval_flags flags;
+    flags.br      = true;
+    flags.lineEnd = false;
+    while(1)
+    {
+        if (currentToken->type == token_type::WORD && follows(token_type::SYMBOL, '='))
+        {
+            std::string member = peek(-1)->repr;
+            auto parameterType = constructor->getMember(member);
+            if (!parameterType)
+                COMP_ERROR(RS_SYNTAX_ERROR, "Unknown member '{}'.", member);
+            rs_variable& var = *parameterType->first;
+
+            adv();
+            rs_expression expr = expreval(flags, &var.type_info);
+
+            rbc_value x = expr.rbc_evaluate(program);
+            
+            typeverify(var.type_info, x, RS_PARSER_PARAMETER_USE_CASE);
+
+            values.insert_or_assign(var.name, x);
+            unorderedParameterCount++;
+        }
+        else
+        {
+            if (unorderedParameterCount > 0)
+                COMP_ERROR(RS_SYNTAX_ERROR, "An ordered parameter cannot follow an unordered parameter in a constructor or function call.");
+            
+            if (constructor->members.size() == parameterCount)
+                COMP_ERROR(RS_SYNTAX_ERROR, "Object type {} does not take {} ordered arguments.", constructor->name, parameterCount + 1);
+            // get ordered member
+            auto& member = *constructor->members.at(parameterCount);
+
+            rs_variable& var = *member.first;
+            rs_expression expr = expreval(flags, &var.type_info);
+            rbc_value x = expr.rbc_evaluate(program);
+
+            typeverify(var.type_info, x, RS_PARSER_PARAMETER_USE_CASE);
+
+            values.insert_or_assign(var.name, x);
+        }
+        parameterCount ++;
+        if (equals(token_type::BRACKET_CLOSED))
+            break;
+
+        expect(',', token_type::SYMBOL);
+        adv();
+    }
+    
+    return std::make_shared<rs_object_instance>(constructor, values);
+}
+rs_expression                rbc_parser::expreval         (expr_eval_flags flags, rs_type_info* hintedType)
 {
     rs_expression expr;
     token& current = *currentToken;
@@ -487,6 +582,8 @@ rs_expression                rbc_parser::expreval         (bool br, bool lineEnd
     if (current.type == token_type::CBRACKET_OPEN)
     {
         // parse object
+        COMP_ERROR(RS_SYNTAX_ERROR, "Inline objects are deprecated.");
+
         std::shared_ptr<rs_object> obj = inlineobjparse();
         expr.nonOperationalResult = std::make_shared<rbc_value>(obj);
         return expr;
@@ -503,7 +600,12 @@ rs_expression                rbc_parser::expreval         (bool br, bool lineEnd
         expr.nonOperationalResult = std::make_shared<rbc_value>(parselist());
         return expr;
     }
-    bst_operation<token> bst = make_bst(br, oneNode, obj);
+    else if (current.type == token_type::KW_INSTANTIATE_OPERATOR)
+    {
+        expr.nonOperationalResult = std::make_shared<rbc_value>(instantiationParse(hintedType));
+        return expr;
+    }
+    bst_operation<token> bst = make_bst(flags.br, flags.oneNode, flags.obj);
 
     if (bst.isSingular())
     {
@@ -520,18 +622,19 @@ rs_expression                rbc_parser::expreval         (bool br, bool lineEnd
             }
         }
     }
-
-    if (lineEnd)
+    if (!bst.left)
+        COMP_ERROR(RS_SYNTAX_ERROR, "Unexpected token {}.", currentToken->repr);
+    if (flags.lineEnd)
     {
         if (!resync())
             COMP_ERROR(RS_EOF_ERROR, "Missing semicolon.");
         adv();
         expect(token_type::LINE_END);
     }
-    else if (!bst.isSingular())
+    else if (!bst.isSingular() && !flags.br) // hope this works lol these flags have me going insane
         adv();
 
-    if(prune)
+    if(flags.prune)
         prune_expr(bst);
 
     expr.operation = bst;
@@ -558,7 +661,7 @@ void                 rbc_parser::typeverify       (const rs_type_info& t, rbc_va
                         error = "Cannot assign constant of type {} to variable of type {}.";
                         break;
                     case 1: // return
-                        error = "Return expression evaluated type does not match function signature.";
+                        error = "Return expression evaluated type of {} does not match function return signature of {}.";
                         break;
                     default:
                         error = "Evaluated type of constant ({}) cannot convert to expected type of {}.";
@@ -572,7 +675,7 @@ void                 rbc_parser::typeverify       (const rs_type_info& t, rbc_va
             rbc_register& reg = *std::get<1>(val);
             if (reg.operable)
             {
-                if (t.equals(RS_INT_KW_ID)) break;
+                if (t.equals(RS_INT_KW_ID) || t.equals(RS_FLOAT_KW_ID)) break;
                 std::string error;
                 switch(useCase)
                 {
@@ -610,7 +713,24 @@ void                 rbc_parser::typeverify       (const rs_type_info& t, rbc_va
         }
         case 3:
         {
-            WARN("No type checking for objects as of yet.");
+            rs_object_instance& instance = *std::get<3>(val);
+
+            if (!t.equals(instance.fromSchema->typeID))
+            {
+                std::string error;
+                switch(useCase)
+                {
+                    case 0: // variable assignment
+                        error = "Cannot assign object instance of type {} to variable of different type {}.";
+                        break;
+                    case 1:
+                        error = "Object instance being returned has type (of {}) that does not match function return signature of {}.";
+                        break;
+                    default:
+                        error = "Evaluated type of {} cannot convert to expected type of {}.";
+                }
+                COMP_ERROR(RS_SYNTAX_ERROR, error, tutil::type_to_str(instance.fromSchema->typeID), t.tostr());
+            }
             break;
         }
         case 4:
@@ -809,13 +929,13 @@ std::shared_ptr<rs_list>     rbc_parser::parselist        ()
         adv();
         if (equals(token_type::SQBRACKET_CLOSED))
             break;
-        rs_expression expr = expreval(false, false);
+        rs_expression expr = expreval({false, false}, list.elementType.type_id != -1 ? &list.elementType : nullptr);
         rs_expression::_ResultT val = expr.rbc_evaluate(program);
         // a list expression's element type is determined by its first element. [PUT IN DOCS]
         if (list.elementType.type_id == -1)
             list.elementType = typeinfer(val);
 
-        if (val.index() == 4) // a list which was parsed fine, so we are at a different ']'
+        if (val.index() == 3 || val.index() == 4) // a list which was parsed fine, so we are at a different ']'
             adv();
         list.values.push_back(std::make_shared<rbc_value>(val));
     } while (equals(token_type::SYMBOL, ','));
@@ -833,6 +953,7 @@ rs_type_info                 rbc_parser::typeparse        ()
     token* next = adv();
 
     int typeID     = next->info;
+    std::shared_ptr<rs_object> fromObject = nullptr;
     int genericID  = -1;
 
     bool convertedFromGeneric = false;
@@ -846,6 +967,7 @@ rs_type_info                 rbc_parser::typeparse        ()
         if (custom != program.objectTypes.end())
         {
             typeID = custom->second->typeID;
+            fromObject = custom->second;
             goto _after_type;
         }
 
@@ -904,7 +1026,11 @@ _after_type:
 
         arrayFlags.push_back(flag);
     }
-    if(tinfo.type_id == -1)
+
+    tinfo.fromObject = fromObject;
+
+    // if(tinfo.type_id == -1) <- used to be
+    if (!convertedFromGeneric)
     {
         tinfo.type_id     = typeID;
         tinfo.reference   = reference;
@@ -914,7 +1040,7 @@ _after_type:
         tinfo.generic_id  = genericID;
         tinfo.arrayFlags  = arrayFlags;
     }
-    else if (convertedFromGeneric)
+    else
     {
         // this is explicit functionality todo should revamp to use .assignType
         tinfo.array_count = arrayCount;
@@ -923,8 +1049,7 @@ _after_type:
         tinfo.optional = optional;
         tinfo.reference = reference;
         tinfo.generic = false; 
-    } else
-        tinfo.otherTypes.push_back(rs_type_info{typeID, arrayCount, optional, reference, genericID != -1, genericID, {}, arrayFlags});
+    }
     adv();
 
     nexpect('?', '|', '&');
@@ -1059,16 +1184,17 @@ bool                         rbc_parser::callparse        (std::string& name,
         _notfound:
             COMP_ERROR_R(RS_SYNTAX_ERROR, "Unknown function name.", false);
         }
-        
-        auto child = program.currentFunction->childFunctions.find(name);
-
-        if (child == program.currentFunction->childFunctions.end())
-            goto _notfound;
-
-        function = child->second;
-
         if (program.currentFunction->name == name)
-            COMP_ERROR_R(RS_SYNTAX_ERROR, "Recursion is not supported yet.", false);
+            function = program.currentFunction;
+        else
+        {
+            auto child = program.currentFunction->childFunctions.find(name);
+
+            if (child == program.currentFunction->childFunctions.end())
+                goto _notfound;
+
+            function = child->second;
+        }
 
     } else function = func->second;
 
@@ -1136,29 +1262,44 @@ bool                         rbc_parser::callparse        (std::string& name,
     
     adv();
 
-    // -- TODO -- IMPL
-    // generics will now always exist, we try to infer all the types needed in the parameter parsing below
-    // if (function->generics && !generics)
-    // {
-    //     generics = new std::vector<rs_type_info>();
-    //     generics->reserve(function->generics->entries.size());
-    // }
-    // std::unordered_map<std::string, bool>& genericEntries = function->generics->entries;
-
-    if (currentToken->type != token_type::BRACKET_CLOSED)
+    if (!equals(token_type::BRACKET_CLOSED))
     {
+        bool hasUnorderedParameter = false;
+        std::vector<rs_variable*> assignedParameters;
+        assignedParameters.reserve(function->parameters.size());
         while(1)
         {
-            rs_expression expr = expreval(true, false, false);
+            rs_variable* param = nullptr;
+            std::string current = currentToken->repr; // temporary
+            if (equals(token_type::WORD) && follows(token_type::SYMBOL, '='))
+            {
+                hasUnorderedParameter = true;
+                param = function->getParameterByName(current);
+
+                if (std::find(assignedParameters.begin(), assignedParameters.end(), param) != assignedParameters.end())
+                    COMP_ERROR(RS_SYNTAX_ERROR, "Cannot assign a second value to a parameter.");
+                if (!param)
+                    COMP_ERROR(RS_SYNTAX_ERROR, "No parameter found named '{}'.", current);
+                adv();
+            }
+            else
+            {
+                if (hasUnorderedParameter)
+                    COMP_ERROR(RS_SYNTAX_ERROR, "An unordered parameter cannot come before an ordered parameter.");
+                param = function->getNthParameter(pc);
+                if (!param)
+                    COMP_ERROR(RS_SYNTAX_ERROR, "No matching function call with parameter count of {}.", pc);
+            }
+
+            assignedParameters.push_back(param);
+            pc++;
+
+            rs_expression expr = expreval({true, false, false}, &param->type_info);
             resync(); // reassign current
             if (expr.nonOperationalResult)
                 adv(); // object parsing finishes at }, not: ,
             auto result = expr.rbc_evaluate(program);
-
-            rs_variable* param = function->getNthParameter(pc);
-            if (!param)
-                COMP_ERROR_R(RS_SYNTAX_ERROR, "No matching function call with pc of {}", false, pc);
-
+            
             rs_type_info tinfo = param->type_info;
 
             if (tinfo.generic)
@@ -1204,14 +1345,19 @@ bool                         rbc_parser::callparse        (std::string& name,
             if (fromModule)
                 c.parameters.push_back(std::make_shared<rbc_value>(fromModule));
             program(c);
-            pc ++;
             if (equals(token_type::SYMBOL, ','))
                 adv();
             else if (equals(token_type::BRACKET_CLOSED))
                 break;
             else
-                COMP_ERROR_R(RS_SYNTAX_ERROR, "Unexpected token.", false);
+                COMP_ERROR(RS_SYNTAX_ERROR, "Unexpected token.");
         }
+    }
+    else
+    {
+        // functions need to have at least one push operation
+        
+        program(rbc_command(rbc_instruction::PUSH, std::shared_ptr<void>(nullptr)));
     }
     
     // valiate we have inferred all generics
@@ -1271,19 +1417,14 @@ bool                         rbc_parser::callparse        (std::string& name,
 }
 std::shared_ptr<rs_variable> rbc_parser::varparse         (token& name, bool needsTermination, bool parameter, bool obj, bool isConst)
 {
-    // useless ahh error
-
-    // if (program.functions.find(name.repr) != program.functions.end()
-    // || (program.currentFunction && program.currentFunction->name == name.repr))
-    //     COMP_ERROR_R(RS_SYNTAX_ERROR, "The name '{}' already exists as a function.", nullptr, name.repr);
     std::shared_ptr<rs_variable> variable = program.getVariable(name.repr);
     // if we access the variable like v[0].b = ...
     std::shared_ptr<rs_var_access_path> accessingPath = nullptr;
-    bool exists = (bool)variable && variable->scope == program.currentScope; // && variable->scope == program.currentScope
+    bool exists = (bool)variable && variable->scope == program.currentScope && !obj; // && variable->scope == program.currentScope
     
     if (currentToken->info != ':')
     {
-        if (!exists)
+        if (!exists)    
             COMP_ERROR_R(RS_SYNTAX_ERROR, "Expected type.", nullptr);
             
         if (equals(token_type::SQBRACKET_OPEN) || equals(token_type::OBJECT_ACCESS_OPERATOR))
@@ -1320,6 +1461,7 @@ _skip_type:
     case '=': // assign a value to variable
     {
         bool needsCreation = !exists;
+        // TODO can deprecate probably
         if(!variable)
         {
             variable = std::make_shared<rs_variable>(name, program.currentScope, !program.currentFunction);
@@ -1338,6 +1480,12 @@ _skip_type:
         if (currentType == token_type::WORD && (next = peek()) && next->type == token_type::MODULE_ACCESS)
         {
         _parseModule:
+            if (obj)
+            {
+            __objError:
+            // TODO: can remove and impl
+                COMP_ERROR(RS_SYNTAX_ERROR, "Object fields can only be assigned constant values.");
+            }
             auto _module = program.modules.find(currentToken->repr);
 
             if (_module == program.modules.end())
@@ -1348,8 +1496,11 @@ _skip_type:
             if (!parsemoduleusage(_module->second, &typeInfo))
                 ABORT_PARSE;
 
+            if (needsCreation)
+                program(rbc_commands::variables::create(variable));
+
             if (accessingPath)
-                program(rbc_commands::variables::storeReturn(accessingPath));
+                program(rbc_commands::variables::storeReturn(*accessingPath));
             else
                 
                 program(rbc_commands::variables::storeReturn(variable));
@@ -1357,6 +1508,8 @@ _skip_type:
         }
         else if (currentType == token_type::MODULE_ACCESS)
         {
+            if (obj) goto __objError;
+
             if (program.currentModule)
             {
                 if (!parsemoduleusage(program.currentModule, &typeInfo))
@@ -1378,19 +1531,28 @@ _skip_type:
                                             (next->type == token_type::SYMBOL && next->info == '<')))
         {
         _parseFunc:
-        
+            if (obj) goto __objError;
+            
             // its a function call, function calls are expensive and only allowed once in an expression,
             // hence why we skip expreval here.
             std::string& funcname = currentToken->repr;
-            auto f = program.functions.find(funcname);
-            if (f == program.functions.end())
-                COMP_ERROR(RS_SYNTAX_ERROR, "Unknown function name.");
+            std::shared_ptr<rbc_function> f = nullptr;
+            auto iter = program.functions.find(funcname);
+            if (iter == program.functions.end())
+            {
+                if (program.currentFunction && funcname == program.currentFunction->name)
+                    f = program.currentFunction;
+                else
+                    COMP_ERROR(RS_SYNTAX_ERROR, "Unknown function name.");
+            }
+            else
+                f = iter->second;
             
-            auto& decorators = f->second->decorators;
+            auto& decorators = f->decorators;
             if(std::find(decorators.begin(), decorators.end(), rbc_function_decorator::NORETURN) != decorators.end())
                 COMP_ERROR_R(RS_SYNTAX_ERROR, "Cannot assign variable the value of a function that is marked as 'noreturn'.", nullptr);
 
-            if (!f->second->returnType->equals(typeInfo))
+            if (!f->returnType->equals(typeInfo))
                 COMP_ERROR_R(RS_SYNTAX_ERROR, "Function return type does not match or convert to variable type.", nullptr);
 
             adv();
@@ -1405,7 +1567,7 @@ _skip_type:
                 program(rbc_commands::variables::create(variable));
             }
             if (accessingPath)
-                program(rbc_commands::variables::storeReturn(accessingPath));
+                program(rbc_commands::variables::storeReturn(*accessingPath));
             else
                 program(rbc_commands::variables::storeReturn(variable));
             
@@ -1413,8 +1575,9 @@ _skip_type:
         }
 
         using _ValueT = bst_operation<token>::_NodeT;
-
-        rs_expression expr = expreval();
+        expr_eval_flags flags;
+        flags.obj = obj;
+        rs_expression expr = expreval(flags, &variable->type_info);
         variable->value = std::make_shared<rs_expression>(expr);
         
         if (expr.operation.isSingular() && !obj && !expr.nonOperationalResult)
@@ -1431,7 +1594,7 @@ _skip_type:
                 else
                 {
                     if (accessingPath)
-                        program(rbc_commands::variables::set(accessingPath, path));
+                        program(rbc_commands::variables::set(*accessingPath, path));
                     else
                         program(rbc_commands::variables::set(variable, path));
 
@@ -1457,7 +1620,7 @@ _skip_type:
                 else
                 {
                     if (accessingPath)
-                        program(rbc_commands::variables::set(accessingPath, val));
+                        program(rbc_commands::variables::set(*accessingPath, val));
                     else
                         program(rbc_commands::variables::set(variable, val));
 
@@ -1469,13 +1632,14 @@ _skip_type:
             rbc_value result = expr.rbc_evaluate(program);
 
             // list
-            if (result.index() == 4)
+            const size_t index = result.index();
+            if (index == 4 || index == 3)
             {
                 // this is the stupidest solution to a problem ever.
-                // for some reason, lists end parsing at ']', which they should, but this function expects a ';'
+                // for some reason, lists end parsing at ']' and object instantiation at ')', which they should, but this function expects a ';'
                 // and expreval can end parsing at ';' so no adv needed (hence comment out below)
                 adv();
-                if (typeInfo.array_count == 0)
+                if (index == 4 && typeInfo.array_count == 0)
                     COMP_ERROR(RS_SYNTAX_ERROR, "Cannot assign list-instance to a non-list typed variable.");
             }
 
@@ -1486,7 +1650,7 @@ _skip_type:
             else
             {
                 if (accessingPath)
-                    program(rbc_commands::variables::set(accessingPath, result));
+                    program(rbc_commands::variables::set(*accessingPath, result));
                 else
                     program(rbc_commands::variables::set(variable, result));
 
@@ -1498,7 +1662,7 @@ _skip_type:
     }
     case ';':
     {
-        if (!exists)
+        if (!exists && !obj)
             program(rbc_commands::variables::create(variable));
         break;
     }
@@ -1573,13 +1737,19 @@ std::vector<rs_type_info>    rbc_parser::generics_insersion_parse ()
 
     return ret;
 }
-std::shared_ptr<rs_object>   rbc_parser::objparse         (std::string& name)
+std::shared_ptr<rs_object>   rbc_parser::objparse         (std::string& objname)
 {
     expect(token_type::CBRACKET_OPEN);
 
 
-    rs_object obj{name, program.currentScope};
+    std::shared_ptr<rs_object> obj = std::make_shared<rs_object>(objname, program.currentScope);
     rs_object_member_decorator decorator = rs_object_member_decorator::OPTIONAL;
+    
+    obj->typeID = rs_object::TYPE_CARET_START + program.objectTypes.size();
+    
+    // in case a field wants to be of this type
+    program.objectTypes.insert({objname, obj});
+
     while(adv() && currentToken->type != token_type::CBRACKET_CLOSED)
     {
         // dont append to global scope
@@ -1598,26 +1768,41 @@ std::shared_ptr<rs_object>   rbc_parser::objparse         (std::string& name)
                     decorator = rs_object_member_decorator::REQUIRED;
                 else if (t == token_type::KW_SEPERATE)
                     decorator = rs_object_member_decorator::SEPERATE;
+                else 
+                    decorator = rs_object_member_decorator::OPTIONAL;
 
                 adv();
-                expect(token_type::WORD);
-                
-                name = currentToken;
-                break;
+                expect(':', token_type::SYMBOL);
+                continue;
             }
             default:
-                COMP_ERROR_R(RS_SYNTAX_ERROR, "Unexpected token.", nullptr);
+                COMP_ERROR(RS_SYNTAX_ERROR, "Unexpected token.");
         }
         adv();
+        // TODO DONT ALLOW EXTERNAL VARIABLES TO BE MODIFIED
         auto variable = varparse(*name, true, false, true);
-        if (obj.members.find(variable->name) != obj.members.end())
-            COMP_ERROR_R(RS_SYNTAX_ERROR, "Duplicate object member name.", nullptr);
+        if (obj->hasMember(variable->name))
+            COMP_ERROR(RS_SYNTAX_ERROR, "Duplicate object member name.");
+        rs_type_info& tinfo = variable->type_info;
 
-        obj.members.insert({variable->name, {*variable, decorator}});
+        // restrictions
+        // TODO RESTRICTIONS
+        // if (tinfo.fromObject)
+        // {
+        //     if (tinfo.fromObject->hasMemberOf(rs_object_member_decorator::REQUIRED))
+        //     {
+        //         if (decorator == rs_object_member_decorator::REQUIRED)
+        //             COMP_ERROR(RS_SYNTAX_ERROR, "Object field marked as required cannot ")
+        //     }
+        //     if (_flag_hasRequiredField)
+        //         COMP_ERROR(RS_SYNTAX_ERROR, "Object member cannot be  ");
+        // }
+
+        obj->addMember({variable, decorator});
     }
     if (_At == S - 1)
         COMP_ERROR_R(RS_EOF_ERROR, "Unterminated object body.", nullptr);
-    return std::make_shared<rs_object>(obj);
+    return obj;
 }
 rs_type_info                 rbc_parser::typeinfer        (const rbc_value& val)
 {
@@ -2061,7 +2246,7 @@ void                         rbc_parser::parseCurrent     ()
         }
         else
         {
-            rs_expression expr = expreval();
+            rs_expression expr = expreval({}, program.currentFunction->returnType.get());
             rbc_value result = expr.rbc_evaluate(program); // evaluate and compute return statement
             
             typeverify(*program.currentFunction->returnType, result, RS_PARSER_RETURN_USE_CASE);
@@ -2080,7 +2265,7 @@ void                         rbc_parser::parseCurrent     ()
     _parseifagain: // for and and or keywords
         adv();
         // br = true as if we hit the closing bracket of the if statement we should return.
-        rs_expression left = expreval(true, false, false);
+        rs_expression left = expreval({true, false, false});
         rbc_value lVal = left.rbc_evaluate(program);
         
         resync();
@@ -2106,8 +2291,7 @@ void                         rbc_parser::parseCurrent     ()
         adv();
         // br = true as if we hit the closing bracket of the if statement we should return.
         // prune = false as expreval has mismatching problems after when encountering this ).
-        // horrible code having 4 boolean flags, maybe make struct.
-        rs_expression right = expreval(true, false, false);
+        rs_expression right = expreval({true, false, false});
         resync();
         rbc_value rVal = right.rbc_evaluate(program);
         token_type t = currentToken->type;
@@ -2169,7 +2353,6 @@ void                         rbc_parser::parseCurrent     ()
                 adv();
 
                 auto obj = objparse(name);
-                obj->typeID = rs_object::TYPE_CARET_START + program.objectTypes.size();
                 program.objectTypes.insert({name, obj});
                 break;
             }

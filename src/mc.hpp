@@ -15,6 +15,7 @@
 #define MC_TELLRAW_CMD_ID 4
 #define MC_KILL_CMD_ID 5
 #define MC_RETURN_CMD_ID 6
+#define MC_TIME_CMD_ID 7
 #define THIS *this;
 
 typedef unsigned int uint;

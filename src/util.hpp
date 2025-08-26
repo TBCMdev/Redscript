@@ -68,7 +68,7 @@ struct shared_wrapper
         }
         return *element->val;
     }
-    _Ty* operator->()
+    _Ty* operator->() const
     {
         return element ? element->val.get() : nullptr;
     }
@@ -296,6 +296,22 @@ inline constexpr result_pair<_VariantT, _VariantT2> commutativeVariantEquals(siz
     return result_pair<_VariantT, _VariantT2>();
 }
 
+template<typename _T1, typename _T2, typename Variant, typename Ret>
+inline constexpr bool commutativeVariantInvoke(
+    Variant& lhs, Variant& rhs,
+    size_t lhsIndex, size_t rhsIndex,
+    Ret(*delegate)(_T1&, _T2&))
+{
+    if (lhs.index() == lhsIndex && rhs.index() == rhsIndex)
+        delegate(std::get<_T1>(lhs), std::get<_T2>(rhs));
+    else if (rhs.index() == lhsIndex && lhs.index() == rhsIndex)
+        delegate(std::get<_T1>(rhs), std::get<_T2>(lhs));
+    else return false;
+
+    return true;
+}
+
+
 /*
 Returns a result pair (true or false along with the ordered native values) if lhs and rhs both equal lhsval or rhsval, granted
 they don't equal the same value.
@@ -347,10 +363,10 @@ inline constexpr bool combinationCommutativeEquals(const _ComparisonT& lhs,
 {
     for(const auto& [key, val] : vals)
     {
-        auto result = commutativeEquals(lhs, key.first, rhs, key.second, lhsnative, rhsnative);
+        result_pair<_ValueT, _ValueT> result = commutativeEquals(lhs, key.first, rhs, key.second, lhsnative, rhsnative);
         if (result)
         {
-            val(lhsnative, rhsnative);
+            val(*result.i1, *result.i2);
             return true;
         }
     }

@@ -1,6 +1,6 @@
 #pragma once
 #include <memory>
-
+#include <vector>
 #include "rbc_value.hpp"
 
 #include "../token.hpp"
@@ -21,5 +21,7 @@ struct rs_expression
     std::shared_ptr<_ResultT> nonOperationalResult = nullptr;
     
     _ResultT rbc_evaluate(rbc_program&,
-                               bst_operation<token>* = nullptr);
+                            bst_operation<token>* = nullptr,
+                            bool = true,
+                            std::shared_ptr<std::vector<std::shared_ptr<rbc_register>>> = nullptr);
 };

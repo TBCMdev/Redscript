@@ -3,7 +3,7 @@ use uuid;
 
 object entity
 {
-required
+required:
     air: int;
     CustomName: text_component;
     CustomNameVisible: bool;

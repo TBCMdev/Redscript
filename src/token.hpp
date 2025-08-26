@@ -71,6 +71,8 @@ enum class token_type
     KW_REQUIRED,
     KW_SEPERATE,
 
+    KW_INSTANTIATE_OPERATOR, // new keyword
+
     KW_FOR,
     KW_WHILE,
     KW_IN,

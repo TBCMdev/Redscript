@@ -9,11 +9,11 @@
 #endif
 
 
-#define IMPL_ERROR(msg) {err=msg " (impl errors do not have trace as of beta, check function calls)"; return;}
+#define IMPL_ERROR(msg) {err=msg " (impl errors do not have trace as of beta, check function calls)"; return nullptr;}
 namespace inb_impls
 {
     // technically tellraw impl.
-    void msg(INB_IMPL_PARAMETERS)
+    _InbRetT msg(INB_IMPL_PARAMETERS)
     {
 
         // TODO: tellraw
@@ -36,12 +36,13 @@ namespace inb_impls
                 
                 factory.create_and_push(MC_TELLRAW_CMD_ID, MC_TELLRAW_CONST(_const.val, c.val));
                 break;
-
-                // 3.14 -> 023087650823
             }
             case 1:
             {
-                WARN("Non implemented tellraw functionality.");
+                // rbc_register& reg = *std::get<1>(val);
+
+                // factory.create_and_push(MC_TELLRAW_CMD_ID, MC_TELLRAW_OPERABLE_REGISTER());
+
                 break;
             }
             case 2:
@@ -65,9 +66,10 @@ namespace inb_impls
             default:
                 IMPL_ERROR("tellraw does not accept these parameter types in this version.");
         }
+        return nullptr;
         
     }
-    void kill(INB_IMPL_PARAMETERS)
+    _InbRetT kill(INB_IMPL_PARAMETERS)
     {
         rbc_value& selector = parameters.at(0);
         if (selector.index() != 0)
@@ -80,18 +82,28 @@ namespace inb_impls
             goto fail;
 
         factory.create_and_push(MC_KILL_CMD_ID, MC_KILL(_const.val));
+        return nullptr;
     }
-    void compile_assert(INB_IMPL_PARAMETERS)
+    _InbRetT compile_assert(INB_IMPL_PARAMETERS)
     {
         err = "Thise inbuilt function is not implemented yet.";
+        return nullptr;
     }
 
     namespace debug
     {
-        void print(INB_IMPL_PARAMETERS)
+        _InbRetT print(INB_IMPL_PARAMETERS)
         {
             // todo
             msg(program, factory, parameters, generics, err);
+            return nullptr;
+        }
+    }
+    namespace time
+    {
+        _InbRetT now(INB_IMPL_PARAMETERS)
+        {
+            return std::make_shared<_InbRetV>(mc_command(false, MC_TIME_CMD_ID, "query gametime"));
         }
     }
 }

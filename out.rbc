@@ -1,19 +1,41 @@
-stuff:
-	CREATE {{_x, 0, 0, 6}, name=_x, scope=1, typeinf=string, (g=0, c=0)}, (const){T=2, v=message}
-	PUSH (const){T=2, v=msg}, (const){T=2, v=__p}, (const){T=6, v=r}
-	PUSH (const){T=2, v=msg}, (const){T=2, v=__msg}, {{_x, 0, 0, 6}, name=_x, scope=1, typeinf=string, (g=0, c=0)}
-	CALL 0x5bc284636980, 0x5bc2846498a0
+fibonacci:
+	IF {{fib, 0, 0, 25}, name=fib, scope=1, typeinf=int, (g=0, c=0)}, (const){T=20, v===}, (const){T=1, v=0}
+	RET (const){T=1, v=0}
+	ENDIF
+	IF {{fib, 0, 0, 25}, name=fib, scope=1, typeinf=int, (g=0, c=0)}, (const){T=20, v===}, (const){T=1, v=1}
 	RET (const){T=1, v=1}
-testing:
-x:
+	ENDIF
+	SAVE (reg){(id=0) op=1, vacant=1}, {{fib, 0, 0, 25}, name=fib, scope=1, typeinf=int, (g=0, c=0)}
+	MATH (reg){(id=0) op=1, vacant=1}, (const){T=1, v=1}, (const){T=1, v=1}
+	PUSH (const){T=2, v=fibonacci}, (const){T=2, v=fib}, (reg){(id=0) op=1, vacant=1}
+	CALL (const){T=2, v=fibonacci}
+	CREATE {{l, 0, 0, 5}, name=l, scope=1, typeinf=int, (g=0, c=0)}
+	SAVERET {{l, 0, 0, 5}, name=l, scope=1, typeinf=int, (g=0, c=0)}
+	SAVE (reg){(id=0) op=1, vacant=1}, {{fib, 0, 0, 25}, name=fib, scope=1, typeinf=int, (g=0, c=0)}
+	MATH (reg){(id=0) op=1, vacant=1}, (const){T=1, v=2}, (const){T=1, v=1}
+	PUSH (const){T=2, v=fibonacci}, (const){T=2, v=fib}, (reg){(id=0) op=1, vacant=1}
+	CALL (const){T=2, v=fibonacci}
+	CREATE {{l2, 0, 0, 6}, name=l2, scope=1, typeinf=int, (g=0, c=0)}
+	SAVERET {{l2, 0, 0, 6}, name=l2, scope=1, typeinf=int, (g=0, c=0)}
+	PUSH (const){T=2, v=msg}, (const){T=2, v=__p}, (const){T=6, v=r}
+	PUSH (const){T=2, v=msg}, (const){T=2, v=__msg}, {{l, 0, 0, 5}, name=l, scope=1, typeinf=int, (g=0, c=0)}
+	CALL 0x1b78eb308d0, 0x1b78eb44780
+	PUSH (const){T=2, v=msg}, (const){T=2, v=__p}, (const){T=6, v=r}
+	PUSH (const){T=2, v=msg}, (const){T=2, v=__msg}, {{l2, 0, 0, 6}, name=l2, scope=1, typeinf=int, (g=0, c=0)}
+	CALL 0x1b78eb308d0, 0x1b78eb44600
+	SAVE (reg){(id=0) op=1, vacant=1}, {{l, 0, 0, 5}, name=l, scope=1, typeinf=int, (g=0, c=0)}
+	MATH (reg){(id=0) op=1, vacant=1}, {{l2, 0, 0, 6}, name=l2, scope=1, typeinf=int, (g=0, c=0)}, (const){T=1, v=0}
+	RET (reg){(id=0) op=1, vacant=1}
 slen:
 len:
-msg:
-setattr:
 kill:
-getattr:
-CREATE {{n, 0, 0, 1}, name=n, scope=0, typeinf=int[]?, (g=1, c=0)}, (const){T=54, v=null}
-CREATE {{iarray, 0, 0, 6}, name=iarray, scope=0, typeinf=int[], (g=1, c=0)}, [(const){T=1, v=4},(const){T=1, v=3},(const){T=1, v=2}]
-PUSH (const){T=2, v=testing}, (const){T=2, v=i1}, {{n, 0, 0, 1}, name=n, scope=0, typeinf=int[]?, (g=1, c=0)}
-PUSH (const){T=2, v=testing}, (const){T=2, v=i2}, iarray[0]
-CALL 0x5bc284642d40, 0x5bc284648e80
+msg:
+CREATE {{w, 0, 0, 1}, name=w, scope=0, typeinf=int, (g=1, c=0)}, (const){T=1, v=11}
+CREATE {{z, 0, 0, 1}, name=z, scope=0, typeinf=int, (g=1, c=0)}, {{w, 0, 0, 1}, name=w, scope=0, typeinf=int, (g=1, c=0)}
+PUSH (const){T=2, v=fibonacci}, (const){T=2, v=fib}, {{z, 0, 0, 1}, name=z, scope=0, typeinf=int, (g=1, c=0)}
+CALL (const){T=2, v=fibonacci}
+CREATE {{x, 0, 0, 1}, name=x, scope=0, typeinf=int, (g=1, c=0)}
+SAVERET {{x, 0, 0, 1}, name=x, scope=0, typeinf=int, (g=1, c=0)}
+PUSH (const){T=2, v=msg}, (const){T=2, v=__p}, (const){T=6, v=r}
+PUSH (const){T=2, v=msg}, (const){T=2, v=__msg}, {{x, 0, 0, 1}, name=x, scope=0, typeinf=int, (g=1, c=0)}
+CALL 0x1b78eb308d0, 0x1b78eb44570

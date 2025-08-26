@@ -41,4 +41,4 @@ public:
         return stream.str();
     }
 };
-std::string getVariableValueLocation(rs_variable& v);
+std::string getVariableValueLocation(const rs_variable& v);

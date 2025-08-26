@@ -23,6 +23,6 @@ struct rs_var_access_path
     std::vector<rs_var_access_path_item> segments = {};
     rs_type_info                         evaluatedType {}; // to get rid of warning
 
-    std::string toPath();
-    std::string toCompiledPath();
+    std::string toPath() const;
+    std::string toCompiledPath() const;
 };

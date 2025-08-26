@@ -1,15 +1,14 @@
 use lang;
 
-a: int = 5;
+type lambda = method<T()>;
 
-method: void b() {
-    a = 2;
+lambda: method = method: void ()
+{
+
 }
 
-method: void c() {
-    a: int = 0;
-    b();
-    msg(@r, a);
-}
 
-c();
+method: method stuff(m: method)
+{
+    return m();
+}

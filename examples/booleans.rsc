@@ -1,6 +1,6 @@
 use lang;
 
-x: int = 0;
+x: bool = false;
 
 
 if (x)

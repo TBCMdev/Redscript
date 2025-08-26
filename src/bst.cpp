@@ -24,7 +24,18 @@ std::string operationTypeToStr(bst_operation_type t)
 
     return "NULL";
 }
-
+bool operatorIsCommutative(bst_operation_type t)
+{
+    switch(t)
+    {
+        case bst_operation_type::ADD:
+        case bst_operation_type::MUL:
+        case bst_operation_type::XOR:
+            return true;
+        default:
+            return false;
+    }
+}
 int operatorPrecedence(char op)
 {
     switch(op)

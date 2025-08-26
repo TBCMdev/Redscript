@@ -28,6 +28,27 @@
 
 rbc_function_decorator parseDecorator(const std::string &);
 
+// used as a variant wrapper to avoid copies of variables, does not 
+// manage deletion of objects however if the object goes out of scope
+// then undefined behaviour will occur.
+struct rs_variable_usage
+{
+    std::variant<rs_variable*, rs_var_access_path*> item;
+    
+    rs_variable_usage(rs_variable& var) :         item(&var)  {}
+    rs_variable_usage(rs_var_access_path& path) : item(&path) {}
+    rs_variable_usage(std::shared_ptr<rs_variable>& var) : item(var.get()) {}
+
+    inline size_t index() const
+    { return item.index(); }
+
+    template<size_t S>
+    inline decltype(auto) get() const
+    {
+        return *std::get<S>(item);
+    }
+};
+
 struct rbc_command
 {
     rbc_instruction type;
@@ -328,6 +349,7 @@ namespace conversion
         _This Return(bool val);
         _This prependStackFrame();
         _This deleteCurrentStackFrame();
+        _This revokeCallParameters (uint by);
         std::shared_ptr<comparison_register> compareNull(const bool scoreboard, const std::string &where, const bool eq);
         std::shared_ptr<comparison_register> compare(const std::string &locationType, const std::string &lhs,
                                                      const bool eq,
@@ -343,14 +365,26 @@ namespace conversion
 
         static mc_command            getStackValue(long index);
         constexpr static std::string getTypedNullConstant(const rs_type_info& t);
-        static std::string           accessList(rs_variable& var, const std::vector<size_t>& indicies);
+        static std::string           stringifyAccessPath(const rs_variable_usage& var, const std::vector<std::variant<size_t, std::string>>& path);
 
         _This setRegisterValue(rbc_register &reg, rbc_value &c);
+        
         _This setVariableValue(rs_variable &var, rbc_value &val);
         _This setVariableValue(rs_variable& var, rs_list& list, bool createVar = false);
         _This setVariableValue(rs_var_access_path &var, rbc_value &val);
+        _This setVariableValue(rs_variable& var, rs_object_instance& instance, bool create);
 
         int setVariableCompilerID(rs_variable& var, int by = 1);
+
+        std::vector<mc_command> parseList(const rs_variable_usage& var,
+                            const rs_list& list,
+                            std::stringstream& stream,
+                            std::vector<std::variant<size_t, std::string>> indicies);
+        std::vector<mc_command> parseObject(const rs_variable_usage& var,
+                            const rs_object_instance& list,
+                            std::stringstream& stream,
+                            std::vector<std::variant<size_t, std::string>> path);
+
     };
 }
 

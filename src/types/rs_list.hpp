@@ -3,6 +3,7 @@
 #include <memory>
 
 #include "rbc_value.hpp"
+#include "rbc_register.hpp"
 
 #include "../type_info.hpp"
 

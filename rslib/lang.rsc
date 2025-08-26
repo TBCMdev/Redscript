@@ -1,5 +1,14 @@
 use _compiler;
 use definitions;
+
+// object location
+// {
+//     x: float;
+//     y: float;
+//     z: float;
+//     dimension: int; // use aliases like DIMENSION_OVERWORLD
+// }
+
 // use entity; not implemented yet
 /*
 Houses the imporant language functions of the redscript language.
@@ -9,18 +18,6 @@ Houses the imporant language functions of the redscript language.
 Beta note: AVOID_ERROR_CHECK is a temporary generic type used to delay function compilation.
            any function with that as a template should not be used.
 */
-/*
-Gets an attribute attached to a value in storage.
-this function only works on variables and objects.
-*/
-method<_Type>: void getattr (const __v: _Type&, __attr: string)             __cpp__;
-/*
-sets an attribute attached to a value in storage.
-this function only works on variables and objects.
-if the attribute doesn't exist, it is created.
-you can use this to attach extra data to your variables.
-*/
-method<_Type, _Val>: void setattr (const __v: _Type&, __attr: string, __val: _Val&)  __cpp__;
 
 /*
 Sends a message __msg to the entity selector __p.
@@ -34,8 +31,13 @@ method:          void kill  (__p: selector)                     __cpp__;
 method<_ElType>: int len    (const __l: _ElType[]?)             __cpp__;
 method:          int slen   (const __str: string)               __cpp__;
 
-method:          void place (__block: string, __x: int, __y: int, __z: int, __dimension: int) __cpp__;
-
+alias PLACE_DESTROY 0;
+alias PLACE_KEEP    1;
+alias PLACE_REPLACE 2;
+/*
+Places the given block at the given location, given __place_flag. See macros above function.
+*/
+method:          void place (__block: string, __loc: location, __place_flag: int)  __cpp__;
 /*
 Houses all helper functions to do with lists.
 Some of these functions are here instead of being inbuilt
@@ -87,6 +89,10 @@ module array
 
     For all primitive types, this is not a problem.
     */
-    method<_ElType>: int       index  (const __l: _ElType[]&, const __val: _ElType) extern wrapper __nocompile__;
+    method<_ElType>: int       index  (const __l: _ElType[]&, const __val: _ElType) extern wrapper compile_time;
 }
-
+module time
+{
+    method: int now() __cpp__;
+    
+}

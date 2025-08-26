@@ -3,7 +3,7 @@
 
 #include "../globals.hpp"
 #include "../mchelpers.hpp"
-std::string rs_var_access_path::toPath()
+std::string rs_var_access_path::toPath() const
 {
     std::stringstream stream;
     stream << fromVar->name;
@@ -36,7 +36,7 @@ std::string rs_var_access_path::toPath()
     return stream.str();
 }
 // "Can only be called if the variable associated with this path has been given a compilation index."
-std::string rs_var_access_path::toCompiledPath()
+std::string rs_var_access_path::toCompiledPath() const
 {
     std::stringstream stream;
     auto& fromvar_val = *fromVar;

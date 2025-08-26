@@ -103,7 +103,7 @@ rbc_function_decorator parseDecorator(const std::string& name)
     if (name == "noreturn") return rbc_function_decorator::NORETURN;
     if (name == "__single__")  return rbc_function_decorator::SINGLE;
     if (name == "__cpp__") return rbc_function_decorator::CPP;
-    if (name == "__nocompile__") return rbc_function_decorator::NOCOMPILE;
+    if (name == "compile_time") return rbc_function_decorator::COMPILE_TIME;
     return rbc_function_decorator::UNKNOWN;
 }
 
@@ -509,8 +509,6 @@ void preprocess(token_list& tokens, std::string fName, std::string& content, rs_
     if(!context)
         context = std::make_shared<rs_preprocessor_context>();
 
-
-    
     do
     {
         size_t start = 0;
@@ -606,6 +604,7 @@ void preprocess(token_list& tokens, std::string fName, std::string& content, rs_
     fragments.push_back(std::make_shared<project_fragment>(fName, content, tokens, rootPath.parent_path()));
 
 }
+
 #define RS_ASSERTC(C, m) if (!(C)) {err=m;return {};}
 #define RS_ASSERT_SIZE(C) RS_ASSERTC(C, "Invalid byte code parameter count. This error is a bug, flag it on github.")
 #define RS_ASSERT_SUCCESS if (!err.empty()) {return mcprogram;}
@@ -658,6 +657,7 @@ mc_program tomc(rbc_program& program, const std::string& moduleName, std::string
                             break;
                         }
                         case 2:
+                        case 3:
                         {
                             factory.setVariableValue(*std::get<sharedt<rs_variable>>(reg), *instruction.parameters.at(1));
                             break;
@@ -765,25 +765,55 @@ mc_program tomc(rbc_program& program, const std::string& moduleName, std::string
                         factory.disableBuffer();
                         factory.clearBuffer();
 
-                        while(--caret >= 0 && (cmd = &instructions.at(caret))->type == rbc_instruction::PUSH)
+                        size_t found = 0;
+                        // get all n parameter push instructions
+                        if (func.parameters.size() > 0)
                         {
-                            parameters.push_back(*cmd->parameters.at(2));
-                            mcprogram.paramStackCount--;
-                        }
-                        std::vector<rbc_value> reversed;
-                        reversed.reserve(parameters.size());
+                            while(--caret >= 0 && found != func.parameters.size())
+                            {
+                                if ((cmd = &instructions.at(caret))->type == rbc_instruction::PUSH)
+                                {
+                                    parameters.push_back(*cmd->parameters.at(2));
+                                    found++;
+                                }
+                            }
 
-                        for (auto it = parameters.rbegin(); it != parameters.rend(); ++it) {
+                            if (found != parameters.size())
+                            {
+                                err = "Fatal: could not locate all parameter PUSH instructions for erasing and subsequent inbuilt function invoking.";
+                                return {};
+                            }
+
+                            std::vector<rbc_value> reversed;
+                            reversed.reserve(parameters.size());
+                            for (auto it = parameters.rbegin(); it != parameters.rend(); ++it)
+                            {
                             reversed.push_back(std::move(*it));
+                            }
+                            parameters = std::move(reversed);
                         }
-                        parameters = std::move(reversed);
+                        
                         auto decl = inb_impls::INB_IMPLS_MAP.find(locator);
                         if (decl == inb_impls::INB_IMPLS_MAP.end())
                         {
                             err = "Fatal: inbuilt (__cpp__ decl) c++ function mapping for '" + locator.str() + "' doesn't exist. This could be due to a mismatch in versions.";
                             return {};
                         }
-                        decl->second(program, factory, parameters, genericTypes.get(), err);
+                        _InbRetT returnValue = decl->second(program, factory, parameters, genericTypes.get(), err);
+                        if (returnValue)
+                        {
+                            _InbRetV& v = *returnValue;
+
+                            if (v.index())
+                            {
+                                mc_command& cmd = std::get<1>(v);
+                                // return the value and store it in ret
+                                factory.add(cmd.storeResult(PADR(storage) RS_PROGRAM_STORAGE SEP RS_PROGRAM_RETURN_REGISTER, "int", 1));
+                            }
+                            else
+                                ERROR("No implementation for inb function return value of type rbc_value.");
+                        }
+
                         if (!err.empty())
                             return {}; // todo can printerr here!!!
                     }
@@ -792,11 +822,14 @@ mc_program tomc(rbc_program& program, const std::string& moduleName, std::string
                         // we do need the parameters at runtime! the function is not inbuilt
                         factory.disableBuffer();
                         factory.addBuffer();
-                        factory.invoke(moduleName, func);
-                        factory.deleteCurrentStackFrame();
                         factory.clearBuffer();
 
+                        factory.invoke(moduleName, func);
+                        factory.deleteCurrentStackFrame();
                     }
+
+                    if (func.parameters.size() > 0)
+                        factory.revokeCallParameters(func.parameters.size());
 
                     break;
                 }
@@ -812,7 +845,6 @@ mc_program tomc(rbc_program& program, const std::string& moduleName, std::string
                 }
                 case rbc_instruction::PUSH:
                 {
-                    RS_ASSERT_SIZE(size >= 2);
 
                     // store PUSH generated commands into a buffer so that if an inbuilt function is called,
                     // we can clear the buffer as the function is handled at compile time.
@@ -825,6 +857,8 @@ mc_program tomc(rbc_program& program, const std::string& moduleName, std::string
                     if (i == 0 || (instructions.at(i - 1).type != rbc_instruction::PUSH))
                         factory.prependStackFrame();
                     
+                    if (size < 2)
+                        break; // we just needed to prepend the stack frame
                     rbc_constant funcName = std::get<0>(*instruction.parameters.at(0));
                     rbc_constant paramName = std::get<0>(*instruction.parameters.at(1));
 
@@ -959,7 +993,7 @@ mc_program tomc(rbc_program& program, const std::string& moduleName, std::string
                             case 0:
                             {
                                 // two constants.
-                                WARN("Comparing two constants is not good practice.");
+                                ERROR("Comparing two constants is not good practice and not implemented.");
                                 break;
                             }
                             case 1:
@@ -1051,8 +1085,59 @@ mc_program tomc(rbc_program& program, const std::string& moduleName, std::string
                             goto _end;
                         }
                         }
+
+                        {
+                        result_pair<rs_var_access_path, rbc_constant> res = 
+                            commutativeVariantEquals<rs_var_access_path, rbc_constant, rbc_value>(6, lhs, 0, rhs);
+
+                        if (res)
+                        {
+                            rs_var_access_path& var = *res.i1;
+                            rbc_constant& con = *res.i2;
+                            usedRegister = factory.compare("data", var.toCompiledPath(), eq, con.val, true);
+                            goto _end;
+                        }
+                        }
+                        
+                        {
+                        result_pair<rs_var_access_path, sharedt<rbc_register>> res = 
+                            commutativeVariantEquals<rs_var_access_path, sharedt<rbc_register>, rbc_value>(6, lhs, 1, rhs);
+
+                        if (res)
+                        {
+                            rs_var_access_path& var = *res.i1;
+                            rbc_register& reg = *res.i2;
+
+                            if (reg.operable)
+                                factory.getRegisterValue(reg).storeResult(PADR(storage) MC_TEMP_STORAGE, "int", 1);
+                            else
+                                factory.copyStorage(MC_TEMP_STORAGE, MC_NOPERABLE_REG_GET(reg.id));
+
+                            usedRegister = factory.compare("data", var.toCompiledPath(), eq, MC_TEMP_STORAGE);
+                            goto _end;
+                        }
+                        }
+
+                        {
+                        result_pair<rs_var_access_path, sharedt<rs_variable>> res = 
+                            commutativeVariantEquals<rs_var_access_path, sharedt<rs_variable>, rbc_value>(6, lhs, 2, rhs);
+
+                        if (res)
+                        {
+                            rs_var_access_path& path = *res.i1;
+                            rs_variable& var = *res.i2;
+
+                            usedRegister = factory.compare("data", RS_PROGRAM_STORAGE SEP INS_L(path.toCompiledPath()), eq,
+                                                        RS_PROGRAM_STORAGE SEP INS_L(MC_VARIABLE_VALUE(var)));
+                            goto _end;
+                        }
+                        }
                     }
                 _end:
+                    if (!usedRegister)
+                    {
+                        WARN("Unimplemented comparison between rbc_value<%zu> and rbc_value<%zu>.", lhs.index(), rhs.index());
+                    }
                     mcprogram.blocks.push({0, usedRegister});
                     break;
                 }
@@ -1115,7 +1200,7 @@ mc_program tomc(rbc_program& program, const std::string& moduleName, std::string
                             {
                                 rbc_register& reg = *std::get<1>(val);
 
-                                factory.getRegisterValue(reg).storeResult(PADR(storage) RS_PROGRAM_STORAGE SEP RS_PROGRAM_RETURN_REGISTER);
+                                factory.add(factory.getRegisterValue(reg).storeResult(PADR(storage) RS_PROGRAM_STORAGE SEP RS_PROGRAM_RETURN_REGISTER, "int", 1));
 
                                 break;   
                             }
@@ -1123,7 +1208,7 @@ mc_program tomc(rbc_program& program, const std::string& moduleName, std::string
                             {
                                 rs_variable& var = *std::get<2>(val);
 
-                                factory.copyStorage(RS_PROGRAM_RETURN_REGISTER, MC_VARIABLE_VALUE_FULL(var));
+                                factory.copyStorage(RS_PROGRAM_RETURN_REGISTER, MC_VARIABLE_VALUE(var));
                                 // factory.copyStorage(RS_PROGRAM_STORAGE SEP RS_PROGRAM_RETURN_TYPE_REGISTER, MC_VARIABLE_TYPE_FULL(var));
                                 break;
                             }
@@ -1155,7 +1240,6 @@ mc_program tomc(rbc_program& program, const std::string& moduleName, std::string
                             rs_variable& var = *std::get<2>(val);
 
                             factory.copyStorage(MC_VARIABLE_VALUE(var), RS_PROGRAM_RETURN_REGISTER);
-                            // factory.copyStorage(MC_VARIABLE_TYPE(var) , RS_PROGRAM_RETURN_TYPE_REGISTER);
                             break;
                         }
                         case 6:
@@ -1237,7 +1321,7 @@ mc_program tomc(rbc_program& program, const std::string& moduleName, std::string
                 std::find(decorators.begin(), decorators.end(), rbc_function_decorator::EXTERN) == decorators.end()
             ) // not inbuilt function 
             {
-                bool isimpl = util::is_subpath_of(implPath, function->fromFragment->folderPath);
+                bool isimpl = util::is_subpath_of(function->fromFragment->folderPath, implPath);
                 bool has_generics      = (bool)function->generics;
                 
                 if (has_generics)
@@ -1391,7 +1475,7 @@ namespace conversion
     CommandFactory::_This CommandFactory::prependStackFrame()
     {
         for(auto& frame : stackFrames)
-            frame->id ++;
+            (frame->id)++;
         stackFrames.push(std::make_shared<rs_stack_frame>(0));
         create_and_push(MC_DATA_CMD_ID, PADR(modify storage) RS_PROGRAM_STORAGE SEP RS_PROGRAM_STACK SEP PADR(prepend value) RS_DEFAULT_STACK_FRAME);
         return THIS;
@@ -1400,8 +1484,15 @@ namespace conversion
     {
         stackFrames.pop();
         for(auto& frame : stackFrames)
-            frame->id--;
+            (frame->id)--;
         create_and_push(MC_DATA_CMD_ID, PADR(remove storage) RS_PROGRAM_STORAGE SEP RS_PROGRAM_STACK "[0]");
+        return THIS;
+    }
+    
+    // used to revert functionality of PUSH instruction
+    CommandFactory::_This CommandFactory::revokeCallParameters (uint by)
+    {
+        context.paramStackCount -= by;
         return THIS;
     }
     CommandFactory::_This CommandFactory::setVariableValue (rs_variable& var, rbc_value& val)
@@ -1426,6 +1517,12 @@ namespace conversion
             {
                 rs_variable& v = *std::get<2>(val);
                 copyStorage(MC_VARIABLE_VALUE(var), MC_VARIABLE_VALUE(v));
+                break;
+            }
+            case 3:
+            {
+                rs_object_instance& instance = *std::get<3>(val);
+                setVariableValue(var, instance, false);
                 break;
             }
             case 4:
@@ -1469,13 +1566,29 @@ namespace conversion
                 copyStorage(varPath.toCompiledPath(), MC_VARIABLE_VALUE(var));   
                 break;
             }
+            case 3:
+            {
+                rs_object_instance& instance = *std::get<3>(val);
+                std::stringstream out; 
+
+                mccmdlist setupCmds = parseObject(varPath, instance, out, {});
+
+                create_and_push(MC_DATA_CMD_ID, MC_VARIABLE_PATH_SET_CONST(varPath.toCompiledPath(), out.str()));
+
+                for(mc_command& cmd : setupCmds) add(cmd);
+                break;
+            }
             case 4:
             {
-                // rs_list& l = *std::get<4>(val);
+                rs_list& instance = *std::get<4>(val);
+                std::stringstream out; 
 
-                ERROR("Unsupported save operation between an existing variable path and a raw list constant. This is not a bug, but a lack of implementation. This works fine if you create a new variable with the list constant instead.");
+                mccmdlist setupCmds = parseList(varPath, instance, out, {});
 
-                // storeListConstant(varPath, l);
+                create_and_push(MC_DATA_CMD_ID, MC_VARIABLE_PATH_SET_CONST(varPath.toCompiledPath(), out.str()));
+                
+                for(mc_command& cmd : setupCmds) add(cmd);
+
                 break;
             }
             case 6:
@@ -1491,6 +1604,8 @@ namespace conversion
     }
     CommandFactory::_This CommandFactory::setRegisterValue (rbc_register& reg, rbc_value& value)
     {
+        // float conversion
+            
         switch(value.index())
         {
             case 0:
@@ -1506,7 +1621,12 @@ namespace conversion
             }
             case 1:
             {
-                // TODO
+                rbc_register& reg2 = *std::get<1>(value);
+
+                if (reg2.operable)
+                    create_and_push(MC_SCOREBOARD_CMD_ID, MC_OPERABLE_REG_COPY(reg.id, reg2.id));
+                else WARN("Unimplemented non operable register SAVE operation.");
+                
                 break;
             }
             case 2:
@@ -1726,6 +1846,8 @@ namespace conversion
     {
         if (t.array_count > 0)
             return "[]";
+        if (t.fromObject)
+            return "{}";
         switch (t.type_id)
         {
             case RS_STRING_KW_ID:
@@ -1738,120 +1860,265 @@ namespace conversion
                 return "0";
         }
     }
-    std::string           CommandFactory::accessList       (rs_variable& var, const std::vector<size_t>& indicies)
+    std::string           CommandFactory::stringifyAccessPath(const rs_variable_usage& var, const std::vector<std::variant<size_t, std::string>>& _path)
     {
-        std::string path = RS_PROGRAM_VARIABLES;
-        for(size_t i = 0; i < indicies.size(); i++)
+        std::string path;
+
+        if (var.index())
+            path = var.get<1>().toCompiledPath();
+        else
+            path = getVariableValueLocation(var.get<0>());
+
+        for(size_t i = 0; i < _path.size(); i++)
         {
-            size_t pathIndex = indicies.at(i);
-            if (i == 0 && !var.comp_info.isParameter)
-                path += '[' + std::to_string(pathIndex) + "].value";
-            else if (i % 2 != 0)
-                path += '[' + std::to_string(pathIndex) + ']';
+            auto pathItem = _path.at(i);
+            if (pathItem.index())
+                path += '.' + std::get<1>(pathItem);
             else
-                path += "." + std::to_string(pathIndex);
-
-            
+            {
+                if (i % 2 != 0)
+                    path += '[' + std::to_string(std::get<0>(pathItem)) + ']';
+                else
+                    path += "." + std::to_string(std::get<0>(pathItem));
+            }
         }
-
         return path;
+    }
+
+    std::vector<mc_command> CommandFactory::parseObject     (const rs_variable_usage& var,
+                                                             const rs_object_instance& instance,
+                                                             std::stringstream& stream,
+                                                             std::vector<
+                                                                std::variant<size_t, std::string>
+                                                                        > path)
+    {
+        std::vector<mc_command> initCommands;
+
+        stream << '{';
+
+        auto addField = [&](const std::string& name, const std::string& _value)
+        {
+            stream << name << ':' << _value << ',';
+        };
+        for(auto& [name, value] : instance.values)
+        {
+            path.push_back(name);
+            const std::string accessPath = stringifyAccessPath(var, path);
+            switch(value.index())
+            {
+                case 0:
+                {
+                    rbc_constant& c = const_cast<rbc_constant&>(std::get<0>(value));
+                    c.quoteIfStr();
+                    addField(name, c.val);
+                    break;
+                }
+                case 1:
+                {
+                    rbc_register& reg = *std::get<1>(value);
+
+                    addField(name, "0");
+
+                    if(reg.operable)
+                    {
+                        mc_command assign(false, MC_DATA_CMD_ID, MC_DATA(modify storage, INS(accessPath))
+                                                PAD(set from score) MC_OPERABLE_REG(INS_L(STR(reg.id)))
+                                        );
+                        initCommands.push_back(assign);
+                    }
+                    else
+                    {
+                        // TODO FIX
+                        mc_command assign(false, MC_DATA_CMD_ID, MC_DATA(modify storage, INS(accessPath))
+                                                PAD(set from storage) MC_NOPERABLE_REG(reg.id)
+                                    );
+                        initCommands.push_back(assign);
+                    }
+                    break;
+                }
+                case 2:
+                {
+                    // insert null, and append (move code to below).
+                    const rs_variable& v = *std::get<2>(value);
+
+                    mc_command assign(false, MC_DATA_CMD_ID, MC_DATA(modify storage, INS(accessPath))
+                                                PAD(append from storage) MC_VARIABLE_VALUE_FULL(v)
+                                    );
+                    initCommands.push_back(assign);
+                    addField(name, CommandFactory::getTypedNullConstant(v.type_info));
+
+                    break;
+                }
+                case 3:
+                {
+                    const rs_object_instance& recur_instance = *std::get<3>(value);
+
+                    parseObject(var, recur_instance, stream, path);
+                    break;
+                }
+                case 4:
+                {
+                    const rs_list& child = *std::get<4>(value);
+                    // maybe error here
+                    parseList(var, child, stream, path);
+                    break;
+                }
+            }
+            path.pop_back();
+        }
+        
+        if (instance.values.size() > 0)
+            stream.seekp(-1, std::ios_base::end);
+        stream << '}';
+        return initCommands;
+    }
+    CommandFactory::_This CommandFactory::setVariableValue (rs_variable& var, rs_object_instance& instance, bool create)
+    {
+        std::stringstream stream;
+        if (create)
+            setVariableCompilerID(var);
+
+        mccmdlist initCommands = parseObject(var, instance, stream, {});
+        
+        std::string f = stream.str();
+
+        if (create)
+        {
+            if (var.comp_info.isParameter)
+            {
+                create_and_push(MC_DATA_CMD_ID,
+                        MC_DATA(modify storage, RS_PROGRAM_PARAMETERS)
+                            PAD(merge value)
+                        MC_PARAMETER_JSON_VAL(VAR_ID(var), f));
+            }
+            else
+            {
+                create_and_push(MC_DATA_CMD_ID,
+                        MC_DATA(modify storage, RS_PROGRAM_VARIABLES)
+                            PAD(append value)
+                        MC_VARIABLE_JSON_VAL(f, std::to_string(var.scope),
+                                        std::to_string(var.type_info.type_id))
+                        );
+            }
+        }
+        else
+            create_and_push(MC_DATA_CMD_ID, MC_VARIABLE_SET_CONST(var, f));
+        // add all commands after we init
+        for (auto& cmd : initCommands) add(cmd);
+
+
+        
+        return THIS;
+    }
+    std::vector<mc_command> CommandFactory::parseList(const rs_variable_usage& var, const rs_list& l, std::stringstream& stream, std::vector<std::variant<size_t, std::string>> indicies)
+    {
+        std::vector<mc_command> initCommands;
+
+        const bool isObject = indicies.size() % 2 == 0;
+        auto addField = [&](size_t index, const std::string& value) -> void
+        {
+            if (isObject)
+                stream << '"' << index << "\":" << value;
+            else
+                stream << value;
+            stream << ',';
+            
+        };
+        stream << (isObject ? '{' : '[');
+
+        std::vector<uint32_t> uninitialized;
+        size_t index = 0;
+
+        // TODO add object impl using var parameter
+        for(auto& value : l.values)
+        {
+            indicies.push_back(index);
+            const std::string accessPath = stringifyAccessPath(var, indicies);
+            switch(value->index())
+            {
+                case 0:
+                {
+                    rbc_constant& c = std::get<0>(*value);
+                    c.quoteIfStr();
+
+                    addField(index, c.val);
+                    
+                    break;
+                }
+                case 1:
+                {
+                    rbc_register& reg = *std::get<1>(*value);
+                    
+                    if(reg.operable)
+                    {
+                        mc_command assign(false, MC_DATA_CMD_ID, MC_DATA(modify storage, INS(accessPath))
+                                                PAD(append from score) MC_OPERABLE_REG(INS_L(STR(reg.id)))
+                                        );
+                        initCommands.push_back(assign);
+                    }
+                    else
+                    {
+                        // TODO FIX
+                        mc_command assign(false, MC_DATA_CMD_ID, MC_DATA(modify storage, INS(accessPath))
+                                                PAD(append from storage) MC_NOPERABLE_REG(reg.id)
+                                    );
+                        initCommands.push_back(assign);
+                    }
+                    
+                    addField(index, "0");
+                    // TODO fix non operable registers here, 0 might not be the null constant suitable
+                    break;
+                }
+                case 2:
+                {
+                    // insert null, and append (move code to below).
+                    rs_variable& v = *std::get<2>(*value);
+
+                    mc_command assign(false, MC_DATA_CMD_ID, MC_DATA(modify storage, INS(accessPath))
+                                                PAD(append from storage) MC_VARIABLE_VALUE_FULL(v)
+                                    );
+                    initCommands.push_back(assign);
+                    addField(index, CommandFactory::getTypedNullConstant(v.type_info));
+
+                    break;
+                }
+                case 3:
+                {
+                    rs_object_instance& instance = *std::get<3>(*value);
+
+                    std::stringstream out;
+
+                    mccmdlist list = parseObject(var, instance, out, indicies);
+                    
+                    addField(index, out.str());
+                    
+                    initCommands.insert(initCommands.end(), list.begin(), list.end());
+                    break;
+                }
+                case 4:
+                {
+                    rs_list& child = *std::get<4>(*value);
+                    // maybe error here
+                    parseList(var, child, stream, indicies);
+                    break;
+                }
+            }
+            indicies.pop_back();
+            index++;
+        }
+        if (l.values.size() > 0)
+            stream.seekp(-1, std::ios_base::end);
+        stream << (isObject ? '}' : ']') << ',';
+
+        return initCommands;
     }
     CommandFactory::_This CommandFactory::setVariableValue (rs_variable& var, rs_list& l, bool create)
     {
         std::stringstream listInitStr;
-        std::vector<mc_command> initCommands;
 
-        std::function<void(const rs_list&, std::stringstream&, std::vector<size_t>)> parseList;
-        
-        parseList = [&](const rs_list& l, std::stringstream& stream, std::vector<size_t> indicies)
-        {
-            const bool isObject = indicies.size() % 2 == 0;
-            auto addField = [&](size_t index, const std::string& value) -> void
-            {
-                if (isObject)
-                    stream << '"' << index << "\":" << value;
-                else
-                    stream << value;
-                stream << ',';
-                
-            };
-            listInitStr << (isObject ? '{' : '[');
-
-            std::vector<uint32_t> uninitialized;
-            size_t index = 0;
-            for(auto& value : l.values)
-            {
-                indicies.push_back(index);
-                switch(value->index())
-                {
-                    case 0:
-                    {
-                        rbc_constant& c = std::get<0>(*value);
-                        c.quoteIfStr();
-
-                        addField(index, c.val);
-                        
-                        break;
-                    }
-                    case 1:
-                    {
-                        rbc_register& reg = *std::get<1>(*value);
-                        
-                        if(reg.operable)
-                        {
-                            mc_command assign(false, MC_DATA_CMD_ID, MC_DATA(modify storage, INS(accessList(var, indicies)))
-                                                    PAD(append from score) MC_OPERABLE_REG(INS_L(STR(reg.id)))
-                                            );
-                            initCommands.push_back(assign);
-                        }
-                        else
-                        {
-                            // TODO FIX
-                            mc_command assign(false, MC_DATA_CMD_ID, MC_DATA(modify storage, INS(accessList(var, indicies)))
-                                                    PAD(append from storage) MC_NOPERABLE_REG(reg.id)
-                                        );
-                            initCommands.push_back(assign);
-                        }
-                        
-                        addField(index, "0");
-                        // TODO fix non operable registers here, 0 might not be the null constant suitable
-                        break;
-                    }
-                    case 2:
-                    {
-                        // insert null, and append (move code to below).
-                        rs_variable& v = *std::get<2>(*value);
-
-                        mc_command assign(false, MC_DATA_CMD_ID, MC_DATA(modify storage, INS(accessList(var, indicies)))
-                                                    PAD(append from storage) MC_VARIABLE_VALUE_FULL(v)
-                                        );
-                        initCommands.push_back(assign);
-                        addField(index, CommandFactory::getTypedNullConstant(v.type_info));
-
-                        break;
-                    }
-                    case 4:
-                    {
-                        rs_list& child = *std::get<4>(*value);
-                        std::vector<size_t> indiciesCopy = indicies;
-                        // maybe error here
-                        parseList(child, stream, indiciesCopy);
-                        break;
-                    }
-                }
-                indicies.pop_back();
-                index++;
-            }
-            
-            listInitStr.seekp(-1, std::ios_base::end);
-            listInitStr << (isObject ? '}' : ']');
-            listInitStr << ',';
-        };
-        
         if (create)
             setVariableCompilerID(var);
-
-        parseList(l, listInitStr, {(size_t)var.comp_info.varIndex});
+        std::vector<mc_command> initCommands = parseList(rs_variable_usage(var), l, listInitStr, {(size_t)var.comp_info.varIndex});
         
         std::string f = listInitStr.str();
         f.pop_back();
@@ -1944,7 +2211,9 @@ namespace conversion
             }
             case 3:
             {
-                // TODO
+                rs_object_instance& instance = *std::get<3>(val);
+
+                setVariableValue(var, instance, true);
                 break;
             }
             case 4:
@@ -1969,24 +2238,18 @@ namespace conversion
     {
         auto operate = [&]()
         {
-            sharedt<rbc_register> rhReg = rbc_compiler.getFreeRegister(true);
-            if (!rhReg)
-                rhReg = rbc_compiler.makeRegister(true);
-            setRegisterValue(*rhReg, val);
-            const std::string opStr = operationTypeToStr(t) + '=';
-            switch(t)
+            sharedt<rbc_register> rhReg = nullptr;
+            if (val.index() != 1)
             {
-                case bst_operation_type::MUL:
-                case bst_operation_type::DIV:
-                case bst_operation_type::MOD:
-                case bst_operation_type::XOR:
-                {
-                    create_and_push(MC_SCOREBOARD_CMD_ID, MC_REG_OPERATE(reg.id, opStr, rhReg->id));
-                    break;
-                }
-                default:
-                    ERROR("Unknown/Unsupported math operation between register and constant.");
+                rhReg = rbc_compiler.getFreeRegister(true);
+                if (!rhReg)
+                    rhReg = rbc_compiler.makeRegister(true);
+                setRegisterValue(*rhReg, val);
             }
+            else
+                rhReg = std::get<1>(val);
+            const std::string opStr = operationTypeToStr(t) + '=';
+            create_and_push(MC_SCOREBOARD_CMD_ID, MC_REG_OPERATE(reg.id, opStr, rhReg->id));
         };
         switch(val.index())
         {
@@ -2010,15 +2273,9 @@ namespace conversion
                 operate();                
                 break;
             }
-            case 1:
-            {
-                break;
-            }
-            case 2:
-            {
-                break;
-            }
-            case 6:
+            case 1: // register
+            case 2: // variable
+            case 6: // variable path
                 operate();
                 break;
             default:
@@ -2029,7 +2286,6 @@ namespace conversion
     }
     CommandFactory::_This CommandFactory::math             (rbc_value& lhs, rbc_value& rhs, bst_operation_type op)
     {
-
         switch(lhs.index())
         {
             case 1:

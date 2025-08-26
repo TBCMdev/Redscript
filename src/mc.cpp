@@ -27,6 +27,9 @@ mc_command::_This mc_command::addroot()
     case MC_RETURN_CMD_ID:
         name = "return";
         break;
+    case MC_TIME_CMD_ID:
+        name = "time";
+        break;
     default:
         WARN("Unknown command.");
         break;

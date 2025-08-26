@@ -15,7 +15,7 @@ public:
     {
         return '"' + val + '"';
     }
-    const token_type val_type;
+    token_type val_type;
     std::string val;
     std::shared_ptr<raw_trace_info> trace = nullptr;
     rbc_constant(token_type _val_type, std::string _val)

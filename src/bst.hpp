@@ -42,6 +42,7 @@ enum class comparison_operation_type
 };
 
 std::string operationTypeToStr(bst_operation_type t);
+bool        operatorIsCommutative(bst_operation_type t);
 inline int operatorPrecedence(bst_operation_type ot)
 {
     switch(ot)
@@ -63,8 +64,8 @@ inline int operatorPrecedence(bst_operation_type ot)
     }
 }
 int operatorPrecedence(char op);
-template<typename _T>
-inline _T operator_compute(_T left, bst_operation_type op, _T right)
+template<typename _Ret, typename _T, typename _T1>
+inline _Ret operator_compute(_T left, bst_operation_type op, _T1 right)
 {
     using ot = bst_operation_type;
     switch(op)
@@ -78,7 +79,7 @@ inline _T operator_compute(_T left, bst_operation_type op, _T right)
         case ot::DIV:
             return left / right;
         case ot::MOD:
-            if constexpr (std::is_integral_v<_T>)
+            if constexpr (std::is_integral_v<_T> && std::is_integral_v<_T1>)
             {
                 return left % right;
             }
