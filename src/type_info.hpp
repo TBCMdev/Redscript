@@ -57,6 +57,10 @@ struct rs_type_info
     {
         return full_type_name();
     }
+    inline bool isNumber()
+    {
+        return array_count == 0 && (type_id == RS_INT_KW_ID || type_id == RS_FLOAT_KW_ID);
+    }
     inline rs_type_info parent_type(bool op = false, bool ref = false) const
     {
         auto flagsCopy = arrayFlags;

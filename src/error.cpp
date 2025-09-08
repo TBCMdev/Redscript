@@ -69,7 +69,7 @@ void printerr(rs_error& error, std::vector<std::string> notes)
     }
     else
     {
-        for(size_t i = 1; i < error.trace.caret; i++) errorHighlight << ' ';
+        for(size_t i = 1; i <= error.trace.caret; i++) errorHighlight << ' ';
         errorHighlight << '^';
     }
     errorHighlight << " error here";

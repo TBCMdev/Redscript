@@ -283,7 +283,7 @@ bst_operation<token>         rbc_parser::make_bst         (bool br, bool oneNode
             // exceptions: these are all handled externally
             if ((currentToken->info == ',' || currentToken->type == token_type::SQBRACKET_CLOSED) ||
                 (currentToken->info == '}' && obj)         ||
-                (currentToken->type == token_type::COMPARE_EQUAL || currentToken->type == token_type::COMPARE_NOTEQUAL))
+                (tutil::isBooleanOperator(currentToken->type)))
             {
                 return root; // commas can end expressions
             }
@@ -1783,9 +1783,9 @@ std::shared_ptr<rs_object>   rbc_parser::objparse         (std::string& objname)
         auto variable = varparse(*name, true, false, true);
         if (obj->hasMember(variable->name))
             COMP_ERROR(RS_SYNTAX_ERROR, "Duplicate object member name.");
-        rs_type_info& tinfo = variable->type_info;
-
         // restrictions
+        // rs_type_info& tinfo = variable->type_info;
+
         // TODO RESTRICTIONS
         // if (tinfo.fromObject)
         // {
@@ -2285,7 +2285,7 @@ void                         rbc_parser::parseCurrent     ()
 
         token& op         = *currentToken;
         token_type compop = op.type;   
-        if(compop != token_type::COMPARE_EQUAL && compop != token_type::COMPARE_NOTEQUAL)
+        if(!tutil::isBooleanOperator(compop))
             COMP_ERROR(RS_SYNTAX_ERROR, "Unexpected token.");
 
         adv();
@@ -2295,6 +2295,12 @@ void                         rbc_parser::parseCurrent     ()
         resync();
         rbc_value rVal = right.rbc_evaluate(program);
         token_type t = currentToken->type;
+
+        auto leftT = typeinfer(lVal);
+        auto rightT = typeinfer(rVal);
+        
+        if (!leftT.equals(rightT))
+            COMP_ERROR(RS_SYNTAX_ERROR, "Cannot perform comparison '{}' between types {} and {}", op.repr, leftT.tostr(), rightT.tostr());
 
         switch(t)
         {
@@ -2308,7 +2314,7 @@ void                         rbc_parser::parseCurrent     ()
                 COMP_ERROR(RS_SYNTAX_ERROR, "Unexpected token.");
 
         }
-        program(rbc_command(flags.parsingelif ? rbc_instruction::ELIF : rbc_instruction::IF, lVal, rbc_constant(compop, op.repr, std::make_shared<raw_trace_info>(op.trace)), rVal));
+        program(rbc_command(flags.parsingelif ? rbc_instruction::ELIF : rbc_instruction::IF, lVal, std::make_shared<token_type>(op.type), rVal));
         
         goto end_if_parse;
     }

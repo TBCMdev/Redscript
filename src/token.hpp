@@ -35,6 +35,10 @@ enum class token_type
     MACRO_OPERATOR,
     COMPARE_EQUAL,
     COMPARE_NOTEQUAL,
+    COMPARE_GREATER,
+    COMPARE_LESS,
+    COMPARE_GREATER_EQ,
+    COMPARE_LESS_EQ,
     MODULE_ACCESS,
 
     SYMBOL,
@@ -90,6 +94,21 @@ enum class token_type
 namespace tutil
 {
     
+    inline bool isBooleanOperator(const token_type& tt)
+    {
+        switch(tt)
+        {
+            case token_type::COMPARE_EQUAL:
+            case token_type::COMPARE_NOTEQUAL:
+            case token_type::COMPARE_GREATER:
+            case token_type::COMPARE_GREATER_EQ:
+            case token_type::COMPARE_LESS:
+            case token_type::COMPARE_LESS_EQ:
+                return true;
+            default:
+                return false;
+        }
+    }
     inline constexpr std::string type_to_str(const token_type& tt)
     {
         switch (tt)
@@ -117,6 +136,10 @@ namespace tutil
             case token_type::VAR_OPERATOR: return "variable operator";
             case token_type::COMPARE_EQUAL: return "==";
             case token_type::COMPARE_NOTEQUAL: return "!=";
+            case token_type::COMPARE_GREATER: return ">";
+            case token_type::COMPARE_GREATER_EQ: return ">=";
+            case token_type::COMPARE_LESS: return "<";
+            case token_type::COMPARE_LESS_EQ: return "<=";
             case token_type::MODULE_ACCESS: return "::";
 
             case token_type::SYMBOL: return "symbol";

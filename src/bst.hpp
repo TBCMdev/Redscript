@@ -4,7 +4,7 @@
 #include <variant>
 
 #include "types/rs_var_access_path.hpp"
-
+#include "token.hpp"
 template<typename _Storage>
 struct bst_node
 {
@@ -42,6 +42,8 @@ enum class comparison_operation_type
 };
 
 std::string operationTypeToStr(bst_operation_type t);
+comparison_operation_type _tt_to_cot(token_type tt);
+comparison_operation_type _binary_simplify_tt(token_type tt, bool negate);
 bool        operatorIsCommutative(bst_operation_type t);
 inline int operatorPrecedence(bst_operation_type ot)
 {

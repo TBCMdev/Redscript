@@ -352,9 +352,11 @@ namespace conversion
         _This revokeCallParameters (uint by);
         std::shared_ptr<comparison_register> compareNull(const bool scoreboard, const std::string &where, const bool eq);
         std::shared_ptr<comparison_register> compare(const std::string &locationType, const std::string &lhs,
-                                                     const bool eq,
+                                                     const token_type& comparator,
                                                      const std::string &rhs,
-                                                     const bool rhsIsConstant = false);
+                                                     const bool rhsIsConstant      = false,
+                                                     const bool negate             = false,
+                                                     const bool isNumberComparison = false);
 
         std::shared_ptr<comparison_register> getFreeComparisonRegister();
         static mc_command makeCopyStorage(const std::string &dest, const std::string &src);

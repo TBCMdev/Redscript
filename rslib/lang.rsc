@@ -1,13 +1,13 @@
 use _compiler;
 use definitions;
 
-// object location
-// {
-//     x: float;
-//     y: float;
-//     z: float;
-//     dimension: int; // use aliases like DIMENSION_OVERWORLD
-// }
+object location
+{
+    x: float;
+    y: float;
+    z: float;
+    dimension: int; // use aliases like DIMENSION_OVERWORLD
+}
 
 // use entity; not implemented yet
 /*

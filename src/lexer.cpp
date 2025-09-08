@@ -204,6 +204,35 @@ token_list tlex(const std::string &fName, std::string &content, rs_error *err = 
                 }
                 break;
             }
+            case '<':
+            case '>':
+            {
+                bool n = ch == '<';
+                if (_At + 1 < S)
+                {
+                    char x = adv();
+                    bool found = true;
+                    switch(x)
+                    {
+                        case '=':
+                            customType = n ? token_type::COMPARE_LESS_EQ : token_type::COMPARE_GREATER_EQ;
+                            break;
+                        default:
+                            back();
+                            found = false;
+                            break;
+                    }
+                    if (found)
+                        repr.push_back(x);
+                }
+                
+                if (n)
+                    customType = token_type::COMPARE_LESS;
+                else
+                    customType = token_type::COMPARE_GREATER;
+
+                break;
+            }
             case '=':
             case '!':
             {

@@ -978,9 +978,7 @@ mc_program tomc(rbc_program& program, const std::string& moduleName, std::string
                     
                     RS_ASSERT_SIZE(size == 3);
                     rbc_value& lhs = *instruction.parameters.at(0);
-                    rbc_constant& op = std::get<0>(*instruction.parameters.at(1));
-                    bool eq = op.val == "==";
-                    if (invertFlag) eq = !eq;
+                    token_type tt = *(token_type*)std::get<std::shared_ptr<void>>(*instruction.parameters.at(1)).get();
 
                     rbc_value& rhs = *instruction.parameters.at(2);
 
@@ -1009,13 +1007,13 @@ mc_program tomc(rbc_program& program, const std::string& moduleName, std::string
                                     rbc_register& noperable = reg2.operable ? reg  : reg2; 
                                     factory.add( factory.getRegisterValue(noperable).storeResult(PADR(scoreboard) MC_TEMP_SCOREBOARD_STORAGE) );
 
-                                    usedRegister = factory.compare("score", MC_OPERABLE_REG(INS_L(STR(operable.id))), eq, MC_TEMP_SCOREBOARD_STORAGE);
+                                    usedRegister = factory.compare("score", MC_OPERABLE_REG(INS_L(STR(operable.id))), tt, MC_TEMP_SCOREBOARD_STORAGE, false, invertFlag);
                                 }
                                 // both are either operable or not operable
                                 else if (reg.operable)
-                                    usedRegister = factory.compare("score", MC_OPERABLE_REG(INS_L(STR(reg.id))), eq, MC_OPERABLE_REG(INS_L(STR(reg2.id))));
+                                    usedRegister = factory.compare("score", MC_OPERABLE_REG(INS_L(STR(reg.id))), tt, MC_OPERABLE_REG(INS_L(STR(reg2.id))), false, invertFlag);
                                 else // TODO fix NOPERABLE_REG_GET: not raw, has extra commands at start
-                                    usedRegister = factory.compare("data", MC_NOPERABLE_REG_GET(reg.id), eq, MC_NOPERABLE_REG_GET(reg2.id));
+                                    usedRegister = factory.compare("data", MC_NOPERABLE_REG_GET(reg.id), tt, MC_NOPERABLE_REG_GET(reg2.id), false, invertFlag);
                                 break;
                             }
                             case 2:
@@ -1023,8 +1021,8 @@ mc_program tomc(rbc_program& program, const std::string& moduleName, std::string
                                 rs_variable& var  = *std::get<2>(lhs);
                                 rs_variable& var2 = *std::get<2>(rhs);
 
-                                usedRegister = factory.compare("data", RS_PROGRAM_STORAGE SEP INS_L(MC_VARIABLE_VALUE(var)), eq,
-                                                        RS_PROGRAM_STORAGE SEP INS_L(MC_VARIABLE_VALUE(var2)));
+                                usedRegister = factory.compare("data", RS_PROGRAM_STORAGE SEP INS_L(MC_VARIABLE_VALUE(var)), tt,
+                                                        RS_PROGRAM_STORAGE SEP INS_L(MC_VARIABLE_VALUE(var2)), false, invertFlag);
 
                                 break;
                             }
@@ -1044,13 +1042,13 @@ mc_program tomc(rbc_program& program, const std::string& moduleName, std::string
 
                             if (reg.operable)
                             {
-                                usedRegister = factory.compare("score", MC_OPERABLE_REG(INS_L(STR(reg.id))), eq, con.val, true);
+                                usedRegister = factory.compare("score", MC_OPERABLE_REG(INS_L(STR(reg.id))), tt, con.val, true, invertFlag);
                             }
                             else
                             {
                                 factory.create_and_push(MC_DATA_CMD_ID, MC_TEMP_STORAGE_SET_CONST(con.val));
                                 // TODO: fix to not have leading keywords!
-                                usedRegister = factory.compare("data", MC_NOPERABLE_REG_GET(reg.id), eq, MC_TEMP_STORAGE);
+                                usedRegister = factory.compare("data", MC_NOPERABLE_REG_GET(reg.id), tt, MC_TEMP_STORAGE, false, invertFlag);
                             }
                             goto _end;
                         }
@@ -1068,7 +1066,7 @@ mc_program tomc(rbc_program& program, const std::string& moduleName, std::string
                                 factory.getRegisterValue(reg).storeResult(PADR(storage) MC_TEMP_STORAGE, "int", 1);
                             else
                                 factory.copyStorage(MC_TEMP_STORAGE, MC_NOPERABLE_REG_GET(reg.id));
-                            usedRegister = factory.compare("data", MC_VARIABLE_VALUE(var), eq, MC_TEMP_STORAGE);
+                            usedRegister = factory.compare("data", MC_VARIABLE_VALUE(var), tt, MC_TEMP_STORAGE, false, invertFlag);
                             goto _end;
                         }
                         }
@@ -1081,7 +1079,7 @@ mc_program tomc(rbc_program& program, const std::string& moduleName, std::string
                             rs_variable&  var = *res.i1;
                             rbc_constant& con = *res.i2;
                             
-                            usedRegister = factory.compare("data", MC_VARIABLE_VALUE(var), eq, con.val, true);
+                            usedRegister = factory.compare("data", MC_VARIABLE_VALUE(var), tt, con.val, true, invertFlag, var.type_info.isNumber());
                             goto _end;
                         }
                         }
@@ -1094,7 +1092,7 @@ mc_program tomc(rbc_program& program, const std::string& moduleName, std::string
                         {
                             rs_var_access_path& var = *res.i1;
                             rbc_constant& con = *res.i2;
-                            usedRegister = factory.compare("data", var.toCompiledPath(), eq, con.val, true);
+                            usedRegister = factory.compare("data", var.toCompiledPath(), tt, con.val, true, invertFlag);
                             goto _end;
                         }
                         }
@@ -1113,7 +1111,7 @@ mc_program tomc(rbc_program& program, const std::string& moduleName, std::string
                             else
                                 factory.copyStorage(MC_TEMP_STORAGE, MC_NOPERABLE_REG_GET(reg.id));
 
-                            usedRegister = factory.compare("data", var.toCompiledPath(), eq, MC_TEMP_STORAGE);
+                            usedRegister = factory.compare("data", var.toCompiledPath(), tt, MC_TEMP_STORAGE, false, invertFlag);
                             goto _end;
                         }
                         }
@@ -1127,8 +1125,8 @@ mc_program tomc(rbc_program& program, const std::string& moduleName, std::string
                             rs_var_access_path& path = *res.i1;
                             rs_variable& var = *res.i2;
 
-                            usedRegister = factory.compare("data", RS_PROGRAM_STORAGE SEP INS_L(path.toCompiledPath()), eq,
-                                                        RS_PROGRAM_STORAGE SEP INS_L(MC_VARIABLE_VALUE(var)));
+                            usedRegister = factory.compare("data", RS_PROGRAM_STORAGE SEP INS_L(path.toCompiledPath()), tt,
+                                                        RS_PROGRAM_STORAGE SEP INS_L(MC_VARIABLE_VALUE(var)), false, invertFlag);
                             goto _end;
                         }
                         }
@@ -1716,21 +1714,32 @@ namespace conversion
     }
     std::shared_ptr<comparison_register> CommandFactory::compare          (const std::string& locationType,
                                                             const std::string& lhs,
-                                                            const bool eq,
+                                                            const token_type& comparator,
                                                             const std::string& rhs,
-                                                            const bool rhsIsConstant)
+                                                            const bool rhsIsConstant,
+                                                            const bool negate,
+                                                            const bool isNumberComparison)
     {
         std::shared_ptr<comparison_register> reg = getFreeComparisonRegister();
 
+
         reg->vacant = false;
+        bool eq = comparator == token_type::COMPARE_EQUAL;
 
         if (locationType == "data")
         {
 
-
+            if (comparator != token_type::COMPARE_EQUAL && comparator != token_type::COMPARE_NOTEQUAL)
+            {
+                if (!isNumberComparison)
+                    ERROR("Cannot compare lhs: %s and rhs: %s using number-like comparator: %s", lhs.c_str(), rhs.c_str(), tutil::type_to_str(comparator).c_str());
+                
+                goto _scoreCompare;
+            }
             // copy storage value to storage temp
             // try copy rhs to storage temp, and store success in next comparison register
             // invert operation
+
             reg->operation = eq ? comparison_operation_type::NEQ : comparison_operation_type::EQ;
             if (rhsIsConstant)
             {
@@ -1749,11 +1758,12 @@ namespace conversion
         }
         else if (locationType == "score")
         {
+        _scoreCompare:
             create_and_push(MC_SCOREBOARD_CMD_ID, MC_COMPARE_RESET(reg->id));
-            reg->operation = eq ? comparison_operation_type::EQ : comparison_operation_type::NEQ;
+            reg->operation = _binary_simplify_tt(comparator, negate);
             mc_command m{false, MC_SCOREBOARD_CMD_ID, PADR(players set) MC_COMPARE_REG_GET_RAW(INS(STR(reg->id))) PADL(1)};
 
-            m.ifint(lhs, reg->operation, rhs, rhsIsConstant, !eq);
+            m.ifint(lhs, reg->operation, rhs, rhsIsConstant, negate);
 
             add(m);
         }
